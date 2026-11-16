@@ -116,7 +116,7 @@ from type to index URL. That is [`modules.json`](modules.json) in this directory
 
 ```json
 {
-  "registry_version": "1.0.0",
+  "registry_version": "2.0.0",
   "modules": {
     "buzzer": {
       "repo": "module-I2C-buzzer",
@@ -141,10 +141,20 @@ product manifest, and not a Pico library update.
 
 ## The bootloader has an index too
 
-The stage-1 bootloader is a field-updatable component (DEV-31), shared by every
-CH32V003 module, and it is distributed exactly like an app image. Its index
-lives in `module-I2C-bootloader/firmware/index.json`, in the same commit as
-`firmware/bin/noknok_stage1.bin`:
+The stage-1 bootloader is a field-updatable component (DEV-31), and it is
+distributed exactly like an app image. There is **one stage-1 per chip family**
+(different chips, different machine code), each with its own version line, flash
+layout and index, all in repo `module-I2C-bootloader`:
+
+| Chip family | Used by | Index | Image | Layout |
+| --- | --- | --- | --- | --- |
+| `CH32V003` | Buzzer, Knob, LED Button, Display | `firmware/index.json` | `firmware/bin/noknok_stage1.bin` | 2 |
+| `CH32X035` | PicoHub power manager (MOD-0011) | `firmware/index_x035.json` | `firmware/bin/noknok_stage1_x035.bin` | 3 |
+
+The CH32V203 USB modules have a single-stage USB bootloader that cannot update
+itself (see `bootloader-update.md`), so they have no entry yet.
+
+The CH32V003 index, as an example (the index sits in the same commit as its image):
 
 ```json
 {
@@ -159,9 +169,35 @@ lives in `module-I2C-bootloader/firmware/index.json`, in the same commit as
 }
 ```
 
-The registry names it under `bootloader.stage1`. **All of `version`, `url`,
-`layout`, `size` and `crc32` are required** — a bootloader update destroys the
-app region and has no rollback, so nothing about it is guessed.
+An index may also carry `"chip"` (for example `"CH32X035"`): information only.
+**All of `version`, `url`, `layout`, `size` and `crc32` are required** — a
+bootloader update destroys the app region and has no rollback, so nothing about
+it is guessed.
+
+The registry names every stage-1 under `bootloader.stage1`, **keyed by chip
+family** (registry 2.0.0, DEV-128):
+
+```json
+"bootloader": {
+  "stage1": {
+    "CH32V003": { "repo": "module-I2C-bootloader", "index": ".../firmware/index.json" },
+    "CH32X035": { "repo": "module-I2C-bootloader", "index": ".../firmware/index_x035.json" }
+  }
+}
+```
+
+**How the brain picks the stage-1 for a module: by layout, never by name.** Each
+module's stage-1 reports its own flash layout (`0xB1` byte 4), and layout ids are
+unique across chip families. The brain loads every listed stage-1 index and
+offers a module only the one whose `layout` equals the module's own layout. A
+module whose layout matches none is left alone. So an image for one chip can never
+be offered to another, and a new chip family is one more key here, with no
+special case in the brain.
+
+> Registry 1.x had a single `bootloader.stage1: {repo, index}` (CH32V003 only).
+> Brains older than DEV-128 find no `index` field in the 2.0.0 shape, log that no
+> stage-1 is published and skip only the bootloader pass; module app updates keep
+> working. The registry `format` stays 1 for that reason.
 
 How the brain applies it, on a due check, **before** the app pass:
 
