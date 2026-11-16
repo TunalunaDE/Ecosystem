@@ -203,10 +203,11 @@ through this, no exceptions:
    stage-1), the real self-update over I2C cross-checked over SWD, the Conductor's
    `stage1_update()` with app restore, the wrong-file refusal, the hanging-app park, the silent-app park
    (stage-1 v1.2.0 arms the IWDG before the jump) and the parked-module rescue. What each step proves and what a FAIL means: `TESTS.md` next to it.
-3. **Publish it: update `firmware/index.json` in the same commit as the binary** — `version`,
+3. **Publish it: update the chip's index in the same commit as the binary**
+   (`firmware/index.json` for CH32V003, `firmware/index_x035.json` for CH32X035) — `version`,
    `layout`, `size`, `crc32` (all required; generate from the binary, never type). That file
-   is what every brain in the field reads (registry `bootloader.stage1`, see
-   [firmware-index.md](firmware-index.md)). Pushing it **is** the rollout: on each brain's next
+   is what every brain in the field reads (registry `bootloader.stage1.<chip>`, see
+   [firmware-index.md](firmware-index.md); the brain matches by layout). Pushing it **is** the rollout: on each brain's next
    due check (≤ once/24 h) the stage-1 pass takes every I²C module below that version to it,
    restoring the module's current app in the same transaction — same layout only. The
    bootloader's `0xB1` reply carries the **flash layout id as a 5th byte** since v1.2.0
