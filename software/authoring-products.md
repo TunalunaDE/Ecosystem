@@ -241,6 +241,14 @@ while True:
   a limited number of physical ports, so high module counts need Qwiic
   branches / a hub to fan out. Electrically fine (that's what enumeration is
   for) — but it needs a wiring plan.
+- **Product code has little RAM: keep the script under ~30 KB.** The brain
+  reads the whole `product.py` into RAM to run it and keeps that text there, next
+  to everything the brain itself needs. A 45 KB product (comments included) stopped
+  with `MemoryError` on a Pico 2 W, and right after setup even a 37 KB one can
+  (DEV-236). Comments count, because the source text is what sits in RAM. For a
+  big product, keep the readable source in `poc/scripts/src/` and publish the
+  comment-free copy made by `poc/tools/compact_product.py` (see the poc README).
+  More room for makers is planned (roadmap RDM-21).
 - **Not every module has a library driver yet.** Check `noknok.py` for a
   `Noknok<Module>` class before you rely on a module.
 - **File header.** Start scripts with the SPDX header
