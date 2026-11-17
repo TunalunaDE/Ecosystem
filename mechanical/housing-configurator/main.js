@@ -1153,14 +1153,14 @@ function renderPreview() {
 //    A lane that runs into something turns AMBER and is listed as "check" (Christopher 2026-11-17).
 // Sizes are datasheet nominals (tune the lane lengths here):
 //  - JST-SH SM04B-SRSS-TB (side entry): 6.0 wide × 4.25 deep × 2.95 high. Lane: SHR-04V-S plug 5.0 wide ×
-//    2.9 high, 12 mm out of the mouth (plug ~2.5 + wires before they can bend).
+//    2.9 high, 6 mm out of the mouth (Christopher 2026-11-17: 12 was too long; plug ~2.5 + wires).
 //  - USB-C GCT USB4105 (the noknok part): 8.94 × 7.35 × 3.2 high. Lane = plug overmold USBC_PLUG (12.5 × 7.0),
 //    25 mm out of the mouth (typical overmold 15-20 + strain relief).
 // Conventions (same as MODULES.conn): (x,y) = socket BODY centre, the mouth faces `dir`; sockets sit on the PCB
 // back (MCU side) unless the module is connTop. Board outline = `round`, else `board`, else the tile.
 // Boards sit at their ASSEMBLED position. In the print layout the bottom cover is not moved, so they appear
 // standing in it there too.
-const CONN3D = { jst:{ w:6.0, d:4.25, h:2.95, plugW:5.0, plugH:2.9, plugLen:12.0 },
+const CONN3D = { jst:{ w:6.0, d:4.25, h:2.95, plugW:5.0, plugH:2.9, plugLen:6.0 },
                  usb:{ w:8.94, d:7.35, h:3.2, plugW:USBC_PLUG.w, plugH:USBC_PLUG.h, plugLen:25.0 } };
 let boardsOn = false, boardModelsCache = null, boardGroup = null, asmFront = null, asmBack = null;
 // a connector arrow direction -> world direction, after the module's rotation (same as topUsbFacing)
