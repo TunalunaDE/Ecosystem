@@ -1125,6 +1125,7 @@ function show3D(on) {
   renderer.domElement.style.display = on ? 'block' : 'none';
   document.getElementById('backTo2d').style.display = on ? 'inline-block' : 'none';
   document.getElementById('viewToggle').style.display = on ? 'flex' : 'none';
+  document.getElementById('boardsBtn').style.display = on ? 'inline-block' : 'none';
   if (on) { renderer.setSize(viewEl.clientWidth, viewEl.clientHeight);
     camera.aspect = viewEl.clientWidth/viewEl.clientHeight; camera.updateProjectionMatrix(); }
 }
@@ -1139,11 +1140,150 @@ function renderPreview() {
   camera.position.set(c.x + r, c.y - r*1.4, c.z + r*1.1); controls.target.copy(c); controls.update();
   document.querySelectorAll('#viewToggle button').forEach(b => { const on = b.dataset.mode === previewMode;
     b.style.background = on ? 'var(--accent)' : 'var(--panel)'; b.style.color = on ? '#04150f' : 'var(--muted)'; b.style.fontWeight = on ? '600' : '400'; });
+  renderBoards();
 }
+
+// ================= BOARDS in the 3D view (Christopher 2026-11-17) =================
+// Simple stand-ins, toggled with the "Boards" button: each PCB, every connector body at its real height, and
+// the space a MATED plug + the first bit of cable needs. Purpose: see whether connectors / plugs collide with
+// each other or with the covers, posts and latches, AND whether each cable has room.
+//  - SOCKET bodies are a hard fact: one that touches a cover, post, latch or another module is drawn RED.
+//  - In front of every socket a CABLE LANE (translucent orange) shows the room the plug + cable need. Plug
+//    and cable lengths vary (USB-C overmolds especially), so a lane is NOT an error check: the user judges.
+//    A lane that runs into something turns AMBER and is listed as "check" (Christopher 2026-11-17).
+// Sizes are datasheet nominals (tune the lane lengths here):
+//  - JST-SH SM04B-SRSS-TB (side entry): 6.0 wide × 4.25 deep × 2.95 high. Lane: SHR-04V-S plug 5.0 wide ×
+//    2.9 high, 12 mm out of the mouth (plug ~2.5 + wires before they can bend).
+//  - USB-C GCT USB4105 (the noknok part): 8.94 × 7.35 × 3.2 high. Lane = plug overmold USBC_PLUG (12.5 × 7.0),
+//    25 mm out of the mouth (typical overmold 15-20 + strain relief).
+// Conventions (same as MODULES.conn): (x,y) = socket BODY centre, the mouth faces `dir`; sockets sit on the PCB
+// back (MCU side) unless the module is connTop. Board outline = `round`, else `board`, else the tile.
+// Boards sit at their ASSEMBLED position. In the print layout the bottom cover is not moved, so they appear
+// standing in it there too.
+const CONN3D = { jst:{ w:6.0, d:4.25, h:2.95, plugW:5.0, plugH:2.9, plugLen:12.0 },
+                 usb:{ w:8.94, d:7.35, h:3.2, plugW:USBC_PLUG.w, plugH:USBC_PLUG.h, plugLen:25.0 } };
+let boardsOn = false, boardModelsCache = null, boardGroup = null, asmFront = null, asmBack = null;
+// a connector arrow direction -> world direction, after the module's rotation (same as topUsbFacing)
+function rotDir(p, dir) { const D = { N:[0,1], S:[0,-1], E:[1,0], W:[-1,0] }[dir];
+  switch (p.rot) { case 90: return [-D[1], D[0]]; case 180: return [-D[0], -D[1]]; case 270: return [D[1], -D[0]]; default: return [D[0], D[1]]; } }
+// axis-aligned box from min/max corners -> { geom, box }
+const aabb = (x0,y0,z0,x1,y1,z1) => ({ box:[[x0,y0,z0],[x1,y1,z1]], geom: cuboid({ size:[x1-x0,y1-y0,z1-z0], center:[(x0+x1)/2,(y0+y1)/2,(z0+z1)/2] }) });
+function boardModels(H) {
+  const out = [];   // { geom, box?, kind:'pcb'|'zone'|'conn'|'plug', mod, cid?, name }
+  placed.forEach((p, i) => { const m = MODULES[p.key];
+    const pcbFrontZ = (H - BOX.frontT) - m.clearance_top, pcbBackZ = pcbFrontZ - m.pcb;
+    let pcb2d;
+    if (m.round) { const c = loc(p, m.round.x, m.round.y); pcb2d = circle({ radius:m.round.d/2, segments:64, center:[c.x, c.y] }); }
+    else { const b = m.board || { x:0, y:0, w:m.w, h:m.h }, a = loc(p, b.x, b.y), c = loc(p, b.x + b.w, b.y + b.h);
+      pcb2d = rectangle({ size:[Math.abs(c.x - a.x), Math.abs(c.y - a.y)], center:[(a.x + c.x)/2, (a.y + c.y)/2] }); }
+    out.push({ geom: translate([0, 0, pcbBackZ], extrudeLinear({ height:m.pcb }, pcb2d)), kind:'pcb', mod:i, name:`${m.name} board` });
+    for (const k of m.keepouts || []) {          // e.g. the plugged-in Pico: drawn, not collision-checked
+      const a = loc(p, k.x, k.y), c = loc(p, k.x + k.w, k.y + k.h);
+      out.push({ ...aabb(Math.min(a.x,c.x), Math.min(a.y,c.y), pcbFrontZ, Math.max(a.x,c.x), Math.max(a.y,c.y), pcbFrontZ + m.clearance_top - 1),
+        kind:'zone', mod:i, name:k.text || 'keepout' }); }
+    (m.conn || []).forEach(([dir, cx, cy, kind, label], j) => {
+      const S = kind === 'usb' ? CONN3D.usb : CONN3D.jst, [dx, dy] = rotDir(p, dir), w = loc(p, cx, cy);
+      const z0 = m.connTop ? pcbFrontZ : pcbBackZ - S.h, zc = z0 + S.h/2, alongX = dx !== 0;
+      const hw = (alongX ? S.w : S.d)/2, hd = (alongX ? S.d : S.w)/2;      // half sizes in x / y
+      const nm = `${m.name} ${label || (kind === 'usb' ? 'USB-C' : 'JST')} (${'NESW'[[[0,1],[1,0],[0,-1],[-1,0]].findIndex(v => v[0]===dx && v[1]===dy)]})`;
+      out.push({ ...aabb(w.x - (alongX ? S.d : S.w)/2, w.y - (alongX ? S.w : S.d)/2, z0, w.x + (alongX ? S.d : S.w)/2, w.y + (alongX ? S.w : S.d)/2, z0 + S.h),
+        kind:'conn', mod:i, cid:`${i}.${j}`, name:`${nm} socket` });
+      // plug: from the mouth outward, centred on the socket's height and width
+      const mx = w.x + dx*S.d/2, my = w.y + dy*S.d/2, ex = mx + dx*S.plugLen, ey = my + dy*S.plugLen;
+      const pw = S.plugW/2, ph = S.plugH/2;
+      out.push({ ...aabb(alongX ? Math.min(mx,ex) : mx - pw, alongX ? my - pw : Math.min(my,ey), zc - ph,
+                         alongX ? Math.max(mx,ex) : mx + pw, alongX ? my + pw : Math.max(my,ey), zc + ph),
+        kind:'plug', mod:i, cid:`${i}.${j}`, name:`${nm} cable lane` });
+    });
+  });
+  return out;
+}
+// Point-in-solid test by ray casting (+z) against a triangle soup, with an xy grid index. Used instead of
+// CSG intersect(), which rebuilds a BSP of the whole cover for every test (seconds each).
+function meshIndex(g) {
+  const T = [], cell = 2, grid = new Map(), mn = [1e9,1e9,1e9], mx = [-1e9,-1e9,-1e9];
+  for (const poly of geom3.toPolygons(g)) { const v = poly.vertices;
+    for (let i = 1; i < v.length - 1; i++) T.push([v[0], v[i], v[i+1]]);
+    for (const q of v) for (let k = 0; k < 3; k++) { mn[k] = Math.min(mn[k], q[k]); mx[k] = Math.max(mx[k], q[k]); } }
+  T.forEach((t, ti) => {
+    const x0 = Math.floor(Math.min(t[0][0],t[1][0],t[2][0])/cell), x1 = Math.floor(Math.max(t[0][0],t[1][0],t[2][0])/cell);
+    const y0 = Math.floor(Math.min(t[0][1],t[1][1],t[2][1])/cell), y1 = Math.floor(Math.max(t[0][1],t[1][1],t[2][1])/cell);
+    for (let gx = x0; gx <= x1; gx++) for (let gy = y0; gy <= y1; gy++) { const k = gx + ',' + gy; (grid.get(k) || grid.set(k, []).get(k)).push(ti); } });
+  return { T, grid, cell, mn, mx };
+}
+function insideMesh(M, p) {
+  for (let k = 0; k < 3; k++) if (p[k] < M.mn[k] || p[k] > M.mx[k]) return false;
+  const list = M.grid.get(Math.floor(p[0]/M.cell) + ',' + Math.floor(p[1]/M.cell)); if (!list) return false;
+  let n = 0;
+  for (const ti of list) { const [a, b, c] = M.T[ti];
+    const d = (b[1]-c[1])*(a[0]-c[0]) + (c[0]-b[0])*(a[1]-c[1]); if (Math.abs(d) < 1e-12) continue;   // vertical face
+    const l1 = ((b[1]-c[1])*(p[0]-c[0]) + (c[0]-b[0])*(p[1]-c[1]))/d, l2 = ((c[1]-a[1])*(p[0]-c[0]) + (a[0]-c[0])*(p[1]-c[1]))/d, l3 = 1 - l1 - l2;
+    if (l1 < 0 || l2 < 0 || l3 < 0) continue;
+    if (l1*a[2] + l2*b[2] + l3*c[2] > p[2]) n++; }
+  return n % 2 === 1;
+}
+// sample points inside a box (0.05 mm in from its faces, ≤ 0.5 mm apart, jittered off the round numbers)
+function boxSamples([[x0,y0,z0],[x1,y1,z1]]) {
+  const ax = (a, b) => { const L = b - a - 0.1, n = Math.max(1, Math.ceil(L/0.5)); return Array.from({ length:n }, (_, k) => a + 0.05 + (k + 0.5)*L/n); };
+  const P = []; for (const x of ax(x0,x1)) for (const y of ax(y0,y1)) for (const z of ax(z0,z1)) P.push([x + 0.00137, y + 0.00291, z + 0.00053]);
+  return P;
+}
+async function findCollisions(models) {
+  const obstacles = [{ name:'top cover', M: meshIndex(asmFront) }, { name:'bottom cover', M: meshIndex(asmBack) }];
+  await breathe();
+  for (const o of models) if (o.kind !== 'zone') o.M = meshIndex(o.geom);
+  for (const c of models) { if (c.kind !== 'conn' && c.kind !== 'plug') continue;
+    c.hits = []; const P = boxSamples(c.box);
+    // a SOCKET is only red for solid parts (covers, boards, other sockets); a cable lane over a socket is the
+    // LANE's problem (amber), judged by the user
+    const others = [...obstacles, ...models.filter(o => o.kind !== 'zone' && o.cid !== c.cid && !(o.kind === 'pcb' && o.mod === c.mod)
+                                                    && !(c.kind === 'conn' && o.kind === 'plug'))];
+    for (const o of others) { const q = P.find(p => insideMesh(o.M, p)); if (q) { c.hits.push(o.name); (c.at ||= []).push(q.map(v => +v.toFixed(2))); } }
+    await breathe(); }
+}
+function geomToThree(g) {
+  const pos = [];
+  for (const poly of geom3.toPolygons(g)) { const v = poly.vertices; for (let i = 1; i < v.length - 1; i++) pos.push(...v[0], ...v[i], ...v[i+1]); }
+  const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); geo.computeVertexNormals();
+  return geo;
+}
+const BOARD_MAT = {
+  pcb:  new THREE.MeshStandardMaterial({ color:0x1d6b35, roughness:0.8 }),
+  conn: new THREE.MeshStandardMaterial({ color:0xe6e6e6, roughness:0.5 }),
+  plug: new THREE.MeshStandardMaterial({ color:0xffa040, transparent:true, opacity:0.45, depthWrite:false }),
+  lane: new THREE.MeshStandardMaterial({ color:0xffd000, transparent:true, opacity:0.6, depthWrite:false }),   // lane that runs into something: judge it
+  zone: new THREE.MeshStandardMaterial({ color:0x6f8cff, transparent:true, opacity:0.25, depthWrite:false }),
+  hit:  new THREE.MeshStandardMaterial({ color:0xff2a2a, roughness:0.6 }),
+};
+function renderBoards() {
+  if (boardGroup) { scene.remove(boardGroup); boardGroup.traverse(o => o.geometry && o.geometry.dispose()); boardGroup = null; }
+  mat.transparent = boardsOn; mat.opacity = boardsOn ? 0.28 : 1; mat.depthWrite = !boardsOn; mat.needsUpdate = true;
+  const btn = document.getElementById('boardsBtn');
+  if (btn) { btn.style.background = boardsOn ? 'var(--accent)' : 'var(--panel)'; btn.style.color = boardsOn ? '#04150f' : 'var(--muted)'; }
+  if (!boardsOn || !boardModelsCache) return;
+  boardGroup = new THREE.Group();
+  for (const b of boardModelsCache)
+    boardGroup.add(new THREE.Mesh(geomToThree(b.geom), !(b.hits && b.hits.length) ? BOARD_MAT[b.kind] : b.kind === 'plug' ? BOARD_MAT.lane : BOARD_MAT.hit));
+  scene.add(boardGroup);
+}
+async function toggleBoards() {
+  boardsOn = !boardsOn;
+  if (boardsOn && !boardModelsCache && asmFront) {
+    const models = boardModels(boxH); await findCollisions(models); boardModelsCache = models;
+    const hits = models.filter(b => b.kind === 'conn' && b.hits && b.hits.length), lanes = models.filter(b => b.kind === 'plug' && b.hits && b.hits.length);
+    setStatus((hits.length ? `⚠ ${hits.length} socket collision${hits.length>1?'s':''} (red): ` + hits.map(b => `${b.name} ↔ ${b.hits.join(', ')}`).join(' · ')
+                           : '✓ no socket collides')
+      + (lanes.length ? ` · check ${lanes.length} cable lane${lanes.length>1?'s':''} (amber): ` + lanes.map(b => `${b.name} → ${b.hits.join(', ')}`).join(' · ')
+                      : ' · all cable lanes clear'));
+  }
+  renderBoards();
+}
+
 async function generate() {
   try {
     setStatus('generating box…');
     const asm = await buildBox(); await breathe();
+    asmFront = asm.front; asmBack = asm.back; boardModelsCache = null; boardsOn = false;
     asmBuf = toSTL(asm.front, asm.back); boxH = asm.H; await breathe();
     const pr = printLayout(asm); printBuf = toSTL(pr.front, pr.back); currentSTL = printBuf;
     printFront = pr.front; printBack = pr.back; await breathe();
@@ -1260,6 +1400,7 @@ function busyThen(msg, fn) {
   setTimeout(async () => { try { await fn(); } finally { busy.style.display = 'none'; working = false; } }, 40);
 }
 document.getElementById('generate').addEventListener('click', () => busyThen('Generating 3D box… please wait', generate));
+document.getElementById('boardsBtn').addEventListener('click', () => busyThen('Placing boards + checking clearances…', toggleBoards));
 document.getElementById('backTo2d').addEventListener('click', () => { show3D(false); render(); });
 document.querySelectorAll('#viewToggle button').forEach(b => b.addEventListener('click', () => { previewMode = b.dataset.mode; renderPreview(); }));
 function downloadBlob(buf, name) {
