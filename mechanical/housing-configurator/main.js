@@ -73,7 +73,7 @@ const MODULES = {
     holes:[[2.25,2.25],[17.75,17.75]], conn:[['W',3.1,15.5],['E',16.9,4.5]], top:{type:'button', x:10, y:10, w:16.4, h:16.2} },
   usbled:    { name:'USB LEDs',   w:40, h:40, clearance_top:1.6,  pcb:1.6, clearance_bottom:9.0,
     holes:[[4,4],[36,4],[4,36],[36,36]], conn:[['W',3,20,'usb'],['E',36.5,20]], top:{type:'window', x:20, y:20, w:38, h:38} },  // square opening so the corner LEDs aren't clipped
-  usbleddome:{ name:'USB LEDs +dome', w:70, h:70, clearance_top:1.6, pcb:1.6, clearance_bottom:9.0,   // 70×70 variant: 40×40 board centred, bayonet collar (ø67.6) stays inside the tile so it can't overlap a neighbour
+  usbleddome:{ name:'USB LEDs +dome', w:70, h:70, clearance_top:1.6, pcb:1.6, clearance_bottom:9.0, board:{ x:15, y:15, w:40, h:40 },   // 70×70 variant: 40×40 board centred, bayonet collar (ø67.6) stays inside the tile so it can't overlap a neighbour
     holes:[[19,19],[51,19],[19,51],[51,51]], conn:[['W',18,35,'usb'],['E',51.5,35]], top:{type:'dome_mount', dome:'d58', x:35, y:35, dia:2*domeGeo(DOMES.d58).rH} },   // dia = the plate bore
   // USB LEDs 16x (rev 2.0): a ROUND ø40 board, 16× SK6812 RGBW on the payload side = KiCad's BOTTOM, like
   // the display, so coords are the payload view (x = kx−115, y = ky−75). From the rev 2.0 KiCad layout:
@@ -862,8 +862,31 @@ function gripPeg(x, y, zc) {
       center:[x + PEG_RIB.at*Math.cos(a), y + PEG_RIB.at*Math.sin(a), z0 + ribH/2] })); }
   return union(...parts);
 }
-// Build the box from the current layout. Returns { front, back, H }.
-function buildBox(assembled) {
+// KEEP THE PAGE RESPONSIVE (Christopher 2026-11-17: big boxes made Chrome say "page not responding").
+// The build is one long chain of CSG steps on the main thread; a browser flags the page as hung when it
+// cannot answer input for several seconds, and a web page cannot extend that timeout. So the build is
+// async and calls breathe() between steps: every ~40 ms it hands control back to the browser for a moment.
+let _lastBreath = 0;
+async function breathe() {
+  const t = performance.now();
+  if (t - _lastBreath > 40) { await new Promise(r => setTimeout(r, 0)); _lastBreath = performance.now(); }
+}
+// BOARD KEEP-OUT for the latch arms (Christopher 2026-11-17: a low PicoHub could not be pressed onto its
+// posts, its edge landed on the latch arm's flared foot). The volume a PCB sweeps through on its way down
+// onto its posts: its outline (round, `board`, or the tile) + clr, from just under the PCB up to the lid.
+// The latch arm is clipped by it, so only the foot's flare is trimmed (the thin arm reaches 1.55 mm in,
+// a board edge sits WALL_GAP = 2 mm from the wall). Boards that sit above the arm are not touched at all.
+function boardKeepout(p, H, clr) {
+  const m = MODULES[p.key], pcbBackZ = (H - BOX.frontT) - m.clearance_top - m.pcb, z0 = pcbBackZ - clr;
+  let fp2d;
+  if (m.round) { const c = loc(p, m.round.x, m.round.y); fp2d = circle({ radius: m.round.d/2 + clr, segments:48, center:[c.x, c.y] }); }
+  else { const b = m.board || { x:0, y:0, w:m.w, h:m.h }, a = loc(p, b.x, b.y), c = loc(p, b.x + b.w, b.y + b.h);
+    fp2d = rectangle({ size:[Math.abs(c.x - a.x) + 2*clr, Math.abs(c.y - a.y) + 2*clr], center:[(a.x + c.x)/2, (a.y + c.y)/2] }); }
+  return translate([0, 0, z0], extrudeLinear({ height: H - z0 + 1 }, fp2d));
+}
+// Build the box from the current layout (ASSEMBLED orientation). Returns { front, back, H, xMax };
+// printLayout() turns that into the print layout, so generate() builds the geometry only once.
+async function buildBox() {
   const { frontT, backT, wallT, postR, pegR, pegLen, socketR } = BOX;
   const stacks = placed.map(p => { const m=MODULES[p.key]; return m.clearance_top + m.pcb + m.clearance_bottom; });
   // SEAT lifts even the TALLEST board off the floor, so its JST-socket support columns stay a
@@ -888,8 +911,9 @@ function buildBox(assembled) {
   let front = subtract(
     translate([0,0,backT], extrudeLinear({ height: H-backT }, foot2d)),
     translate([0,0,backT], extrudeLinear({ height: (H-frontT)-backT }, cavity2d)));
-  for (const p of placed) front = subtract(front, topCut(p, H));            // payload openings
+  for (const p of placed) { front = subtract(front, topCut(p, H)); await breathe(); }   // payload openings
   for (const key of holes) {                                                // USB-C cable slots
+    await breathe();
     const [gx,gy,s] = key.split(','); const alongY = (s==='E'||s==='W');
     const on = { N:[0,1], S:[0,-1], E:[1,0], W:[-1,0] }[s];                  // outward normal
     const wm = wallMid(+gx,+gy,s), mid = { x: wm.x + on[0]*WALL_GAP, y: wm.y + on[1]*WALL_GAP };  // out to the wall
@@ -922,10 +946,10 @@ function buildBox(assembled) {
   // per-module M2.5 columns — these ONLY clamp the PCB (front post presses the front, back post
   // presses the back, a peg locates the board through the hole). They do NOT join the covers, so
   // nothing internal is trapped. pcbFrontZ is set so the payload reaches the front plate.
-  for (const p of placed) { const m = MODULES[p.key];
+  for (const p of placed) { const m = MODULES[p.key]; await breathe();
     const pcbFrontZ = (H-frontT) - m.clearance_top, pcbBackZ = pcbFrontZ - m.pcb;
     const frontLen = (H-frontT) - pcbFrontZ, backLen = Math.max(0.4, pcbBackZ - backT);
-    for (const [hx,hy] of m.holes) { const w = loc(p,hx,hy);
+    for (const [hx,hy] of m.holes) { const w = loc(p,hx,hy); await breathe();
       // short locating peg — only as long as the PCB is thick (pegLen), centred in the board so it
       // fills the M2.5 hole and locates the board without protruding into the opposite post. A short
       // peg pulls straight back out on disassembly instead of snapping off.
@@ -966,7 +990,7 @@ function buildBox(assembled) {
   }
 
   // user-placed cable hooks rise from the bottom cover in empty tiles
-  for (const h of hooks) back = union(back, cableHook(h.gx, h.gy, backT));
+  for (const h of hooks) { back = union(back, cableHook(h.gx, h.gy, backT)); await breathe(); }
 
   // LOCATING WALL (Christopher, 2026-10-03): a low 1.4 mm wall around the bottom cover's edge that drops
   // INSIDE the top cover's walls (0.25 mm clearance). It self-centres the halves, stiffens the flat
@@ -983,15 +1007,17 @@ function buildBox(assembled) {
     for (const k of holes)    gap(k, 5 + 2);          // cable notch (slotW 5)
     for (const k of openings) gap(k, GRID);           // whole wall segment is open there
     for (const k of dtFemale) gap(k, GRID);           // the boss fills that tile down to the floor
-    back = union(back, rim); }
+    back = union(back, rim); await breathe(); }
 
   // cover-to-cover JOIN — flexing latches on the walls the USER picked: a spring arm on the back
   // cover clicks a detent into a window in the front-cover wall. Press the detent through the
   // window from OUTSIDE to release, so the box opens (nothing internal is trapped).
   { const IN = { E:[-1,0], W:[1,0], N:[0,-1], S:[0,1] };
     const zDet = backT + Math.min(4.0, (H-frontT-backT)*0.42);   // detent lower -> shorter, stiffer arm
+    const keep = latches.size ? union(...placed.map(p => boardKeepout(p, H, 0.3))) : null;   // see boardKeepout()
     for (const key of latches) {
       if (H <= zDet + 2) continue;
+      await breathe();
       const [gx,gy,side] = key.split(','), [ix,iy] = IN[side], alongY = (side==='E'||side==='W');
       const wm = wallMid(+gx,+gy,side), mid = { x: wm.x - ix*WALL_GAP, y: wm.y - iy*WALL_GAP };   // out to the wall (−IN = outward)
       const armT=1.2, armW=6, flare=2.4, off = 0.35 + armT/2, ax = mid.x + ix*off, ay = mid.y + iy*off;
@@ -1004,7 +1030,7 @@ function buildBox(assembled) {
       const tip  = cuboid({ size: alongY?[armT,armW,capT]:[armW,armT,capT], center:[ax, ay, backT+armH-capT/2] });
       const base = cuboid({ size: alongY?[armT+flare,armW,capB]:[armW,armT+flare,capB],
         center:[ax + ix*flare/2, ay + iy*flare/2, backT+capB/2] });
-      back = union(back, hull(tip, base));
+      back = union(back, subtract(hull(tip, base), keep));       // foot flare trimmed where a board comes down
       const det = alongY ? rotate([Math.PI/2,0,0], cylinder({radius:0.9,height:armW-1,segments:14}))
                          : rotate([0,Math.PI/2,0], cylinder({radius:0.9,height:armW-1,segments:14}));
       back = union(back, translate([ax - ix*(armT/2+0.5), ay - iy*(armT/2+0.5), zDet], det));   // detent toward the wall
@@ -1015,12 +1041,12 @@ function buildBox(assembled) {
   // ---- box-joining features (all on the FRONT cover, which carries the walls) ----
   // MALE dovetail rails: a trapezoid fused to the OUTSIDE of the chosen wall, full wall height. Prints as
   // a clean vertical rail (undercut is horizontal => no supports); slides down into another box's groove.
-  for (const key of dtMale) { const [gx,gy,s] = key.split(','); const f = wallFrame(+gx,+gy,s);
+  for (const key of dtMale) { const [gx,gy,s] = key.split(','); const f = wallFrame(+gx,+gy,s); await breathe();
     front = union(front, translate([0,0,backT], extrudeLinear({ height: H-backT }, dovetailPoly(f, DT.neck, DT.tip, DT.depth, false)))); }
   // FEMALE dovetail sockets: a solid boss grown inward from the wall (fills the reserved tile), with the
   // matching groove carved into it and cut up THROUGH the top plate, so the other box's rail drops in from
   // above. Slot bottoms out on the back plate; both boxes rest on the same surface -> aligned.
-  for (const key of dtFemale) { const [gx,gy,s] = key.split(','); const f = wallFrame(+gx,+gy,s);
+  for (const key of dtFemale) { const [gx,gy,s] = key.split(','); const f = wallFrame(+gx,+gy,s); await breathe();
     const Ld = BOX.wallT + WALL_GAP + DT.bossDepth, bw = DT.tip + 2*DT.clr + 3.0;   // boss reach & tangential width (fits inside the 10 mm tile)
     const bcx = f.outFace.x - f.on[0]*Ld/2, bcy = f.outFace.y - f.on[1]*Ld/2;
     front = union(front, cuboid({ size: f.alongY?[Ld,bw,H-backT]:[bw,Ld,H-backT], center:[bcx, bcy, backT+(H-backT)/2] }));
@@ -1037,7 +1063,7 @@ function buildBox(assembled) {
     } }
   // CABLE openings: remove most of a wall segment, open at the floor line (front plate left as a lintel),
   // so a cable passes between two joined boxes. Lay the cable in, then close the covers.
-  for (const key of openings) { const [gx,gy,s] = key.split(','); const f = wallFrame(+gx,+gy,s);
+  for (const key of openings) { const [gx,gy,s] = key.split(','); const f = wallFrame(+gx,+gy,s); await breathe();
     const wc = { x: f.wm.x + f.on[0]*(WALL_GAP+BOX.wallT/2), y: f.wm.y + f.on[1]*(WALL_GAP+BOX.wallT/2) };
     const owW = GRID - 2.0, thick = BOX.wallT + 4, owB = backT - 0.5, owT = Math.min(H - frontT, OPEN_TOP_Z);
     front = subtract(front, cuboid({ size: f.alongY?[thick,owW,owT-owB]:[owW,thick,owT-owB], center:[wc.x, wc.y, (owB+owT)/2] })); }
@@ -1046,25 +1072,25 @@ function buildBox(assembled) {
   // outer face stays flat and the cover prints plate-down without supports.
   for (const p of placed) { const f = MODULES[p.key].top;
     if (f && f.type === 'dome_mount') { const w = loc(p, f.x, f.y), D = DOMES[f.dome];
-      front = union(front, translate([w.x, w.y, H], domeSocket(D))); } }
+      front = union(front, translate([w.x, w.y, H], domeSocket(D))); await breathe(); } }
 
   // engrave the module labels into the top cover (subtract shallow grooves). Guard each one so a single
   // troublesome label can never crash the whole box. Text is engraved NORMALLY (no pre-mirror) — the print
   // layout flips the cover with a rotation, which keeps the text correct once it's flipped back to assemble.
-  for (const l of labels) { try { const eng = labelEngraving(l, H, false); if (eng) front = subtract(front, eng); }
+  for (const l of labels) { await breathe(); try { const eng = labelEngraving(l, H, false); if (eng) front = subtract(front, eng); }
     catch(e) { console.warn('label skipped:', l.text, e.message); } }
   // deboss the noknok logo(s) into the top cover
-  for (const lo of logos) { try { const eng = logoEngraving(lo.gx, lo.gy, H, false); if (eng) front = subtract(front, eng); }
+  for (const lo of logos) { await breathe(); try { const eng = logoEngraving(lo.gx, lo.gy, H, false); if (eng) front = subtract(front, eng); }
     catch(e) { console.warn('logo skipped:', e.message); } }
 
-  if (assembled) return { front, back, H };
-  // PRINT layout: flip the FRONT show-face-down with a ROTATION (180° about Y), NOT a mirror — a mirror
+  return { front, back, H, xMax: jscad.measurements.measureBoundingBox(foot2d)[1][0] };
+}
+// PRINT layout: flip the FRONT show-face-down with a ROTATION (180° about Y), NOT a mirror — a mirror
   // reflects the part, so the printed+assembled cover came out left-right mirrored from the design. The
   // back is already plate-down (print-ready), so it stays as-is. The front sits to the right for a book-
   // fold: fold it left over the spine onto the back and every column lines up, matching the 2D design.
-  const bb = jscad.measurements.measureBoundingBox(foot2d);
-  front = translate([2*bb[1][0] + 8, 0, H], rotate([0, Math.PI, 0], front));
-  return { front, back, H };
+function printLayout({ front, back, H, xMax }) {
+  return { front: translate([2*xMax + 8, 0, H], rotate([0, Math.PI, 0], front)), back, H };
 }
 
 function toSTL(...solids) {
@@ -1114,12 +1140,13 @@ function renderPreview() {
   document.querySelectorAll('#viewToggle button').forEach(b => { const on = b.dataset.mode === previewMode;
     b.style.background = on ? 'var(--accent)' : 'var(--panel)'; b.style.color = on ? '#04150f' : 'var(--muted)'; b.style.fontWeight = on ? '600' : '400'; });
 }
-function generate() {
+async function generate() {
   try {
     setStatus('generating box…');
-    const pr = buildBox(false); printBuf = toSTL(pr.front, pr.back); currentSTL = printBuf;
-    printFront = pr.front; printBack = pr.back;
-    const asm = buildBox(true); asmBuf = toSTL(asm.front, asm.back); boxH = asm.H;
+    const asm = await buildBox(); await breathe();
+    asmBuf = toSTL(asm.front, asm.back); boxH = asm.H; await breathe();
+    const pr = printLayout(asm); printBuf = toSTL(pr.front, pr.back); currentSTL = printBuf;
+    printFront = pr.front; printBack = pr.back; await breathe();
     show3D(true); renderPreview();
     document.getElementById('download').disabled = false;
     document.getElementById('dlTop').disabled = false;
@@ -1221,11 +1248,16 @@ document.querySelectorAll('#cellMode button').forEach(b => b.addEventListener('c
     : '<b>Reshape box:</b> click empty cells to hug, notch, or bridge modules into one box.';
 }));
 // show the overlay with a message, yield a frame so it paints, then run the (blocking) work, then hide it.
+// The overlay covers the WHOLE page (position:fixed) so the layout can't be edited while an async build
+// is still reading it; `working` drops a second click on Generate.
+let working = false;
 function busyThen(msg, fn) {
+  if (working) return;
+  working = true;
   const busy = document.getElementById('busy');
   document.getElementById('busyMsg').textContent = msg;
   busy.style.display = 'flex';
-  setTimeout(() => { try { fn(); } finally { busy.style.display = 'none'; } }, 40);
+  setTimeout(async () => { try { await fn(); } finally { busy.style.display = 'none'; working = false; } }, 40);
 }
 document.getElementById('generate').addEventListener('click', () => busyThen('Generating 3D box… please wait', generate));
 document.getElementById('backTo2d').addEventListener('click', () => { show3D(false); render(); });
