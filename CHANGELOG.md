@@ -10,7 +10,7 @@ reports and delivery checklists are not part of this file.
 
 ## Unreleased
 
-Nothing yet.
+- DEV-246 - `software/enumeration.md`: new noknok modules get the addresses of popular third-party Qwiic / Stemma QT boards last (48 addresses listed), so a board plugged in later cannot collide with a module. Needs brain-Pico noknok.py 1.28. Breaking: no.
 
 ## v1.3.1 - 2026-11-10
 

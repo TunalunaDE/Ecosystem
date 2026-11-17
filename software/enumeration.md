@@ -124,9 +124,37 @@ Conductor writes 2 bytes to `0x7F`:
 | Byte | Value |
 |------|-------|
 | 0 | `0x1D` — ASSIGN register |
-| 1 | New address: the module's previous address if it has one, else the lowest free address counting up from `0x08` (`0x50–0x57` are skipped). The Conductor sets no upper bound; at the module counts a bus supports (see FAQ) it never gets near the 7-bit limit `0x77`. |
+| 1 | New address: the module's previous address if it has one, else the lowest free address counting up from `0x08`, skipping `0x50–0x57` (brain FRAM) and, while any other address is free, the third-party addresses below. Never above `0x77`: if all 104 addresses are taken, the module stays unassigned and is logged. |
 
 The module switches to the new address and enters `ASSIGNED` state.
+
+#### Addresses kept free for third-party boards
+
+The noknok connector is Qwiic / Stemma QT compatible, so makers plug in boards that sit at a
+**fixed** address set by their chip. Addresses that answer during enumeration are always skipped,
+but a board plugged in *later* would collide with a noknok module that already got its address.
+So the Conductor hands out these 48 addresses to new noknok modules **last**, only when the
+56 other addresses are taken (`Conductor.THIRDPARTY_ADDRESSES`, noknok.py 1.28, DEV-246).
+A module that already has a saved address keeps it, even one from this list.
+
+| Addresses | Typical boards |
+|---|---|
+| `0x0B 0x0C` | LC709203F fuel gauge, MLX90393 magnetometer |
+| `0x10 0x12` | VEML7700 / VEML6075 light, PA1010D GPS, PMSA003I air quality |
+| `0x18 0x19 0x1C 0x1D 0x1E 0x1F` | LIS3DH, MCP9808, MMA845x, ADXL343/345, LIS2MDL, LSM303, KX134 |
+| `0x20 0x23 0x26 0x28 0x29 0x2A` | MCP23017, BH1750, MSA301, BNO055, VL53L0X / VL53L1X / TSL2591, NAU7802 scale |
+| `0x30 0x33 0x36 0x38 0x39` | Soldered easyC boards, MMC5983MA, MLX90640, seesaw boards, MAX17048, AHT20, APDS9960, AS7341 |
+| `0x3C 0x3D` | SSD1306 / SH1107 OLED displays |
+| `0x40 0x42 0x44 0x45` | INA219, HTU21D, Si7021, u-blox GPS, SHT4x / SHT3x |
+| `0x48 0x49 0x4A 0x4B` | ADS1x15 ADC, TMP102 / TMP117, ADT7410, PCT2075 |
+| `0x58 0x59 0x5A 0x5B 0x5C 0x5D` | SGP30 / SGP40 gas, AW9523, MPR121, CCS811, AM2320, LPS22 |
+| `0x60 0x61 0x62` | MCP4725, VCNL4040, MCP9600, SCD30, SCD4x, MSA311 |
+| `0x68 0x69 0x6A 0x6B 0x6F` | DS3231 RTC, MPU6050, ICM20948, LSM6DSOX / ISM330, SparkFun Qwiic Button |
+| `0x70 0x76 0x77` | TCA9548 multiplexer, HT16K33, SHTC3, BME280 / BMP388 |
+
+Sources: Adafruit's I2C address list (github.com/adafruit/I2C_Addresses) and SparkFun's Qwiic
+auto-detect table (OpenLog Artemis), checked 17 Nov 2026. The list in this file and the one in
+`noknok.py` must stay the same; change both in one story.
 
 ### Step 3 — Repeat
 
