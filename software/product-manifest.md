@@ -174,6 +174,8 @@ two knobs that do different jobs, so it needs roles. See [`roles.md`](roles.md).
 | Field | Required | Notes |
 | --- | --- | --- |
 | `assembly_guide` | no | Ordered plain-language steps shown in the app. |
+| `source` | no | `"noknok"` (default) or `"community"` for maker products (ADR-010). Community products get a small "Community" label in the app. |
+| `maker` | no | Maker credit: `{ "name": "Ada", "url": "https://ada.example" }`; `url` optional and https only (other links are ignored). Shown on the product page as "Made by Ada", tappable when a link is given. Leave it out for no credit. |
 | `image` | no | Product picture for the app's catalog, product page and setup screens: raw URL of `images/<product-id>.webp` in the public `poc` repo. WebP, 640 x 640 px, transparent background, subject centred (~8% margin), max 60 KB, a real photo, CC BY-SA 4.0. Missing, unreachable or broken = a neutral placeholder; the app keeps a copy for offline starts. Replacing a picture: new file name (`<id>-v2.webp`) + update the field (the raw host caches ~5 min). |
 | `3d_files` | no | Printable housing files, added when the physical product is designed. |
 | `config_schema` | no | Customer-configurable settings (v2, DEV-34) — rendered by the app, read by `product.py` via `c.settings`. See below. |

@@ -112,6 +112,22 @@
       "description": "Ordered plain-language assembly steps shown in the app.",
       "items": { "type": "string" }
     },
+    "source": {
+      "type": "string",
+      "enum": ["noknok", "community"],
+      "default": "noknok",
+      "description": "Who publishes the product (ADR-010). 'community' = a maker product; the app shows a small 'Community' label. Missing = 'noknok'."
+    },
+    "maker": {
+      "type": "object",
+      "description": "Optional maker credit, shown on the product page as 'Made by <name>'. Leave out for no credit.",
+      "required": ["name"],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string", "minLength": 1, "maxLength": 60, "description": "Name as the maker wants it shown." },
+        "url": { "type": "string", "format": "uri", "pattern": "^https://", "description": "Optional https link (maker's site or profile); the app opens it in the browser. Non-https links are ignored." }
+      }
+    },
     "image": {
       "type": "string",
       "format": "uri",

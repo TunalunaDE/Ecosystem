@@ -302,6 +302,9 @@ For a **role-based** product instead, read
    `poc/images/<product-id>.webp`: WebP, 640 x 640 px, transparent background, max 60 KB,
    a real photo (CC BY-SA 4.0). Point the manifest's `image` at its raw `main` URL; without
    one the app shows a placeholder. See `product-manifest.md`.
+   Maker products: `"source": "community"` and optionally `"maker": {"name", "url"}` for the
+   credit; open a pull request into `poc` (contributing notes in the poc README). Merged to
+   `main` = published.
 2. Manifest validates against `product-manifest.schema.json`.
 3. Manifest `files[].url` point at raw `main` URLs; `module_firmware` declares a
    `min` per module type.
