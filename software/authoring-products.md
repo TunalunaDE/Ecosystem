@@ -305,7 +305,13 @@ For a **role-based** product instead, read
    Maker products: `"source": "community"` and optionally `"maker": {"name", "url"}` for the
    credit; open a pull request into `poc` (contributing notes in the poc README). Merged to
    `main` = published.
-2. Manifest validates against `product-manifest.schema.json`.
+2. **Run the validator** (DEV-255) and fix every ERROR:
+   `python tools/validate_product.py <product-id>` from the poc repo root (`--all` for every
+   product; `--folder <dir>` for an upload folder with `manifest.json`, `product.py`,
+   `image.webp`, `README.md`). It checks the manifest against `product-manifest.schema.json`,
+   the script (parses, size, SPDX header, no network / file writes / settings.toml / secrets)
+   and the picture. Python 3 standard library only, works offline after the first run. The
+   same check runs on every pull request; WARNINGs are for the human reviewer.
 3. Manifest `files[].url` point at raw `main` URLs; `module_firmware` declares a
    `min` per module type.
 4. Added to `catalog.json` (new product line + bump `catalog_version` + `updated`).
@@ -321,4 +327,6 @@ generating products — by hand today, and for the app's AI Product Builder
 (Jira DEV-14). To build a product from a prompt you need exactly four inputs,
 all linked above: **(1)** this contract, **(2)** the manifest schema, **(3)** the
 module APIs in `noknok.py`, and **(4)** the constraints in Gotchas. Firmware is
-out of scope — products compose existing modules only.
+out of scope — products compose existing modules only. **Before you hand a product back,
+run `python tools/validate_product.py --folder <dir>` (poc repo) and fix every ERROR**; it
+is the same check the pull request runs.
