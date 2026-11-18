@@ -112,6 +112,12 @@
       "description": "Ordered plain-language assembly steps shown in the app.",
       "items": { "type": "string" }
     },
+    "image": {
+      "type": "string",
+      "format": "uri",
+      "pattern": "^https://raw\\.githubusercontent\\.com/buildwithnoknok/poc/main/images/[a-z0-9-]+\\.webp$",
+      "description": "Optional product picture shown in the app (catalog, product page, setup). Raw URL of images/<product-id>.webp in the public poc repo: WebP, 640 x 640 px, transparent background, subject centred with ~8% margin, at most 60 KB, a real photo, CC BY-SA 4.0. Missing = the app shows a placeholder. To replace a picture use a new file name (<id>-v2.webp) and update this field (the raw host caches ~5 min)."
+    },
     "controls": {
       "type": "array",
       "description": "Optional user manual: what each physical control does, one row per gesture, in the order the customer should learn them. The app shows it on the device page ('How to use'). Keep rows short — a table, not prose.",

@@ -174,6 +174,7 @@ two knobs that do different jobs, so it needs roles. See [`roles.md`](roles.md).
 | Field | Required | Notes |
 | --- | --- | --- |
 | `assembly_guide` | no | Ordered plain-language steps shown in the app. |
+| `image` | no | Product picture for the app's catalog, product page and setup screens: raw URL of `images/<product-id>.webp` in the public `poc` repo. WebP, 640 x 640 px, transparent background, subject centred (~8% margin), max 60 KB, a real photo, CC BY-SA 4.0. Missing, unreachable or broken = a neutral placeholder; the app keeps a copy for offline starts. Replacing a picture: new file name (`<id>-v2.webp`) + update the field (the raw host caches ~5 min). |
 | `3d_files` | no | Printable housing files, added when the physical product is designed. |
 | `config_schema` | no | Customer-configurable settings (v2, DEV-34) — rendered by the app, read by `product.py` via `c.settings`. See below. |
 
