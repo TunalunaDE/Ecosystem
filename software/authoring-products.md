@@ -280,6 +280,50 @@ product must keep running when the board does not answer.
 
 ---
 
+## Third-party boards (Qwiic / Stemma QT)
+
+A product can also use ready-made Qwiic (SparkFun) / Stemma QT (Adafruit) boards next to noknok modules. The brain
+recognises the supported ones and a product reads them like a module. Everything about what a board *is* (addresses,
+how it is recognised, bus load, what it measures, how to remove its pull-up) lives in ONE file,
+[`thirdparty-boards.json`](thirdparty-boards.json); a manifest only names the type.
+
+**Declare it in the manifest:** add the board to `modules_required` with `"thirdparty": true`:
+
+```json
+"modules_required": [
+  { "type": "buzzer",  "count": 1 },
+  { "type": "veml7700", "count": 1, "thirdparty": true }
+]
+```
+
+`type` must be a key of `thirdparty-boards.json` when `thirdparty` is true, and a noknok module type otherwise (the
+schema checks both). Third-party boards have no firmware minimum: leave them out of `module_firmware`.
+
+**Supported boards (registry 1.0.0):**
+
+| `type` | Board | Addresses | Tested with |
+|---|---|---|---|
+| `veml7700` | Light sensor (VEML7700) | 0x10 | Adafruit 4162 |
+| `tmp102` | Temperature sensor (TMP102) | 0x48, 0x49 ... | SparkFun SEN-16304 |
+| `ads1115` | Analog input (ADS1115) | 0x48, 0x49 ... | generic copy of Adafruit 1085 |
+| `lsm6dsox` | Motion sensor (LSM6DSOX) | 0x6A, 0x6B | Adafruit 4438 |
+| `msa311` | Motion sensor (MSA311) | 0x62 | generic copy of Adafruit 5309 |
+| `ssd1306` | OLED display (SSD1306) | 0x3C, 0x3D | Adafruit 4440 (0.91in 128x32) |
+| `soldered_pir` | Motion detector (PIR) | 0x30, 0x31 ... | Soldered PIR with easyC V1.1.0 |
+
+**Rules for the customer's hands (put them in your assembly guide):**
+- Plug third-party boards in with the brain **unplugged**. There are no reserved addresses: the boot scan gives the noknok
+  modules their addresses around the boards that are already there.
+- Boards add pull-up resistors to the bus. Three or more boards on one bus can overload it; the app's bus check says which
+  board to move to the other bus or which pull-up jumper to cut (`pullups.removable` / `how` in the registry).
+- Two identical boards on one address cannot be told apart: use the board's address jumper.
+- The library is only imported by products that list a third-party board (`noknok_thirdparty`, brain-Pico). The brain code
+  that serves them (status rows, naming, bus check) follows DEV-248 / DEV-249; this chapter and the registry are the
+  contract the app and the brain both read.
+
+`python software/tools/check_thirdparty_registry.py` fails when the registry, the manifest schema and the brain
+library disagree (addresses, types, removable pull-ups), so the three cannot drift apart.
+
 ## Worked example: Whack-a-Mole
 
 The cleanest reference for the **symmetric-modules** pattern:

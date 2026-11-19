@@ -10,7 +10,7 @@ reports and delivery checklists are not part of this file.
 
 ## Unreleased
 
-Nothing yet.
+- DEV-251 - third-party Qwiic / Stemma QT boards: new registry `software/thirdparty-boards.json` (7 boards, version 1.0.0: addresses, identification, bus load, capabilities, pull-up removal), manifest schema accepts `modules_required[].thirdparty: true` with a type from the registry (additive; every existing manifest still validates), new check `software/tools/check_thirdparty_registry.py` (registry <-> schema <-> brain library, runs in CI), authoring-products.md chapter "Third-party boards". Brain library and ops follow in brain-Pico (DEV-248, DEV-249). Breaking: no.
 
 ## v1.3.1 - 2026-11-10
 

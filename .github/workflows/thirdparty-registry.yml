@@ -1,0 +1,18 @@
+# DEV-251: thirdparty-boards.json, the manifest schema and the brain library must agree.
+# The library part runs once brain-Pico carries noknok_thirdparty (DEV-248); until then it is skipped with a warning.
+name: thirdparty-registry
+on:
+  push:
+    paths: ['software/thirdparty-boards.json', 'software/product-manifest.schema.json', 'software/tools/**']
+  pull_request:
+    paths: ['software/thirdparty-boards.json', 'software/product-manifest.schema.json', 'software/tools/**']
+  workflow_dispatch:
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { path: Ecosystem }
+      - uses: actions/checkout@v4
+        with: { repository: buildwithnoknok/brain-Pico, path: brain-Pico }
+      - run: python3 -I Ecosystem/software/tools/check_thirdparty_registry.py

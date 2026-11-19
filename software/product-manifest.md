@@ -89,7 +89,7 @@ under `manifests/`, and are listed in `catalog.json`, which the app fetches firs
 | --- | --- | --- |
 | `brain_type` | yes | `pico_w` (standard) or `pico`. |
 | `setup_pattern` | yes | Controlled vocabulary describing bus topology, **not** free text. I2C-only products are `"Setup 1 (I2C only)"`; anything using a USB module is a Setup 2/2b/3 variant. See the schema `enum`. |
-| `modules_required` | yes | `[{ type, count }]` — what the customer must own. The app checks these against what enumerates on the brain. Identical modules are fine; enumeration gives each a unique address. |
+| `modules_required` | yes | `[{ type, count }]` — what the customer must own. The app checks these against what enumerates on the brain. Identical modules are fine; enumeration gives each a unique address. An entry may carry `"thirdparty": true` for a Qwiic / Stemma QT board from `thirdparty-boards.json` (see authoring-products.md, "Third-party boards"). |
 
 `type` comes from a controlled vocabulary shared with `module_firmware` and
 `roles`: `buzzer`, `knob`, `led_button`, `usb_leds`, `usb_leds_16x`,

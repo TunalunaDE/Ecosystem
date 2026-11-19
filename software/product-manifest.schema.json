@@ -61,13 +61,20 @@
         "additionalProperties": false,
         "required": ["type", "count"],
         "properties": {
-          "type": { "$ref": "#/definitions/moduleType" },
+          "type": { "type": "string", "description": "A noknok module type (definitions.moduleType) or, with \"thirdparty\": true, a third-party board type from thirdparty-boards.json (definitions.thirdPartyType)." },
           "count": {
             "type": "integer",
             "minimum": 1,
             "description": "How many of this module type are needed. Identical modules are fine — enumeration gives each a unique address (scales to ~20 total)."
+          },
+          "thirdparty": {
+            "type": "boolean",
+            "description": "true = a third-party Qwiic / Stemma QT board, not a noknok module: `type` is then one of thirdparty-boards.json (DEV-251) and the brain needs the noknok_thirdparty library. Omit for noknok modules."
           }
-        }
+        },
+        "if": { "required": ["thirdparty"], "properties": { "thirdparty": { "const": true } } },
+        "then": { "properties": { "type": { "$ref": "#/definitions/thirdPartyType" } } },
+        "else": { "properties": { "type": { "$ref": "#/definitions/moduleType" } } }
       }
     },
     "module_firmware": {
@@ -205,6 +212,19 @@
     }
   },
   "definitions": {
+    "thirdPartyType": {
+      "type": "string",
+      "enum": [
+        "ads1115",
+        "lsm6dsox",
+        "msa311",
+        "soldered_pir",
+        "ssd1306",
+        "tmp102",
+        "veml7700"
+      ],
+      "description": "Third-party board types (DEV-251). Must equal the keys of thirdparty-boards.json; software/tools/check_thirdparty_registry.py fails on drift."
+    },
     "moduleType": {
       "type": "string",
       "enum": [
