@@ -8,7 +8,7 @@ import { STLLoader } from 'three/examples/jsm/loaders/STLLoader.js';
 import jscad from '@jscad/modeling';
 import stlSerializer from '@jscad/stl-serializer';
 const { primitives, booleans, transforms, extrusions, expansions, hulls } = jscad;
-const { cuboid, cylinder, cylinderElliptic, rectangle, circle, polygon, sphere } = primitives;
+const { cuboid, cylinder, cylinderElliptic, rectangle, circle, polygon, sphere, roundedRectangle } = primitives;
 const { union, subtract, intersect } = booleans;
 const { hull } = hulls;
 const { translate, rotate, mirror } = transforms;
@@ -946,13 +946,13 @@ const rng = (seed) => () => { seed = (seed * 1664525 + 1013904223) % 4294967296;
 function voronoiCutters(at, s0, s1, cell, web, depth, seed) {
   const rnd = rng(seed), rows = [];
   for (let s = s0, i = 0; s <= s1; s += cell*0.95, i++) { const P = at(s), n = Math.max(5, Math.round(2*Math.PI*P.r / cell));
-    const row = []; for (let k=0; k<n; k++) row.push({ s: s + (rnd()-0.5)*cell*0.55, phi: (k + 0.5*(i%2) + (rnd()-0.5)*0.55) * TAU/n, r: P.r });
+    const row = []; for (let k=0; k<n; k++) row.push({ s: s + (rnd()-0.5)*cell*0.45, phi: (k + 0.5*(i%2) + (rnd()-0.5)*0.45) * TAU/n, r: P.r });
     rows.push(row); }
   const list = [];
   rows.forEach((row, i) => row.forEach(c => {
-    const nb = []; for (let j=Math.max(0,i-2); j<=Math.min(rows.length-1,i+2); j++) for (const o of rows[j]) { if (o === c) continue;
+    const nb = []; for (let j=Math.max(0,i-3); j<=Math.min(rows.length-1,i+3); j++) for (const o of rows[j]) { if (o === c) continue;
       let dphi = ((o.phi - c.phi + Math.PI) % TAU + TAU) % TAU - Math.PI; const dx = -(o.s - c.s), dy = dphi * c.r;
-      if (Math.hypot(dx, dy) < cell*2.6) nb.push([dx, dy]); }
+      if (Math.hypot(dx, dy) < cell*4.2) nb.push([dx, dy]); }
     let poly = [[-40,-40],[40,-40],[40,40],[-40,40]];                       // clip by n·p <= |n|/2 - web/2 for each neighbour n
     for (const [nx, ny] of nb) { const L = Math.hypot(nx, ny), lim = L/2 - web/2, out = [];
       for (let k=0; k<poly.length; k++) { const A = poly[k], B = poly[(k+1)%poly.length], dA = (A[0]*nx + A[1]*ny)/L - lim, dB = (B[0]*nx + B[1]*ny)/L - lim;
@@ -993,36 +993,44 @@ function rocketNose() {
   return extrudeRotate({ segments:96 }, ccwPoly([...outer, [0, outer[outer.length-1][1]], [0, outer[outer.length-1][1] - R.wall], ...offsetPoly(outer, -R.wall).reverse()]));
 }
 
-// ---- 2. MOON AND STARS lantern: a tube with cut-out stars and crescent moons, conical roof with more stars.
+// ---- 2. MOON AND STARS lantern: wide tube (ø76) after a 45° flare out of the bayonet, OPEN at the top, 1.6 mm wall,
+// with ~150 cut-out stars, six crescent moons and one shooting star (star with a three-line tail).
 function starsLid(D) {
-  const g = domeGeo(D), R = 26, outer = [[g.gOR, g.gz], [R, g.gz + 1.5], [R, 96], [6, 116], [0.5, 116]];
+  const g = domeGeo(D), R = 38, H = 110, outer = [[g.gOR, g.gz], [R, g.gz + (R - g.gOR)], [R, H]];
   const at = polyAt(outer), L = arcTo(outer, 1e9), rnd = rng(7);
-  const star = (r) => translate([0, 0, -4], extrudeLinear({ height: 8 }, polygon({ points: Array.from({ length: 10 }, (_, k) => { const an = Math.PI + k*Math.PI/5, rr = k % 2 ? 0.42*r : r; return [rr*Math.cos(an), rr*Math.sin(an)]; }) })));
-  const moon = (r) => translate([0, 0, -4], extrudeLinear({ height: 8 }, subtract(circle({ radius:r, segments:32 }), translate([r*0.38, r*0.12], circle({ radius:r*0.82, segments:32 })))));
-  const items = [], moons = [[34, 0.4], [58, 3.3], [82, 5.4], [L - 8, 1.2]];
-  for (const [s, ph] of moons) items.push({ s, phi: ph, shape: moon(s > L - 20 ? 6.5 : 8.5), rot: 0.5, keep: 11 });
-  for (let s = 18, row = 0; s < L - 12; s += 14, row++) { const P = at(s), n = Math.max(3, Math.floor(2*Math.PI*P.r / 17));
-    for (let k=0; k<n; k++) { const phi = (k + 0.5*(row%2) + (rnd()-0.5)*0.4)*TAU/n, s2 = s + (rnd()-0.5)*5;
-      if (items.some(m => m.keep && Math.hypot(m.s - s2, (((m.phi - phi + Math.PI) % TAU + TAU) % TAU - Math.PI)*P.r) < m.keep + 5)) continue;
-      if (rnd() < 0.2) continue; items.push({ s: s2, phi, shape: star(3.3 + rnd()*1.6), rot: (rnd()-0.5)*0.6 }); } }
-  return subtract(revolveCut(ccwPoly(shellProfile(D, outer, 1.6, true)), placeCutters(at, items), 12, 10), domeLidCuts(D));
+  const star2 = (r) => polygon({ points: Array.from({ length: 10 }, (_, k) => { const an = Math.PI + k*Math.PI/5, rr = k % 2 ? 0.42*r : r; return [rr*Math.cos(an), rr*Math.sin(an)]; }) });
+  const moon2 = (r) => subtract(circle({ radius:r, segments:32 }), translate([r*0.38, r*0.12], circle({ radius:r*0.82, segments:32 })));
+  const ext = (g2) => translate([0, 0, -4], extrudeLinear({ height: 8 }, g2));
+  const shoot = union(star2(6), ccwPoly([[-4,2.4],[-4,-2.4],[-36,0]]), ccwPoly([[-3,7.6],[-3,4.4],[-22,6]]), ccwPoly([[-3,-4.4],[-3,-7.6],[-17,-6]]));
+  const items = [{ s: 70, phi: 1.3, shape: ext(shoot), rot: 0.65, keep: 20 }];
+  [[34, 0.2, 10], [52, 2.7, 12], [64, 4.9, 9], [82, 0.5, 11], [94, 3.4, 9], [100, 5.8, 10]]
+    .forEach(([s, phi, r]) => items.push({ s, phi, shape: ext(moon2(r)), rot: 0.5 + rnd(), keep: r + 2 }));
+  for (let s = 14, row = 0; s < L - 8; s += 11, row++) { const P = at(s), n = Math.max(4, Math.floor(2*Math.PI*P.r / 14));
+    for (let k=0; k<n; k++) { const phi = (k + 0.5*(row%2) + (rnd()-0.5)*0.45)*TAU/n, s2 = s + (rnd()-0.5)*4, sz = 2.8 + rnd()*2.4;
+      if (items.some(m => m.keep && Math.hypot(m.s - s2, (((m.phi - phi + Math.PI) % TAU + TAU) % TAU - Math.PI)*P.r) < m.keep + sz + 3)) continue;
+      if (rnd() < 0.15) continue; items.push({ s: s2, phi, shape: ext(star2(sz)), rot: (rnd()-0.5)*0.8 }); } }
+  return subtract(revolveCut(ccwPoly(shellProfile(D, outer, 1.6, false)), placeCutters(at, items), 12, 14), domeLidCuts(D));
 }
 
-// ---- 3. POLICE CAR (generic toy car, not a licensed model): body + cabin as hulls, hollow, light bar, 4 wheels.
-// The underside rises from the round foot at 45° so it prints bayonet end down without support. About 100 x 60 x 84 mm.
+// ---- 3. POLICE CAR (generic toy car, not a licensed model), 88 x 52 x 64 mm, rounded. The car stands on the cover face:
+// wheels and the body edge sit on the base level (z = Lt), the underside is open, a thin 45° cone inside joins the
+// bayonet tube to the body walls. It prints UPSIDE DOWN (roof on the bed, light bar as the two feet, bayonet tube
+// pointing up, nothing hangs in the air); the STL is already in that pose.
 function policeCar(D) {
-  const g = domeGeo(D), W = 1.6, slab = (lx, wy, z) => translate([0, 0, z], cuboid({ size:[lx, wy, 0.2] }));
-  const disc = (r) => translate([0, 0, g.gz + 0.1], cylinder({ radius:r, height:0.2, segments:64 }));
-  const body = (d) => union(hull(disc(g.gOR - d*0.9), slab(98 - 2*d, 50 - 2*d, 33 + d*0.3), slab(98 - 2*d, 50 - 2*d, 45 - d)),
-    hull(slab(98 - 2*d, 50 - 2*d, 45 - d), slab(62 - 2*d, 46 - 2*d, 61 - d)),             // hood and boot slope up at ~45° (no flat ceilings)
-    hull(slab(62 - 2*d, 46 - 2*d, 61 - d), slab(40 - 2*d, 16 - 2*d, 78 - d)));            // narrower cabin: sides lean in, roof is only 16 mm wide
-  let shell = subtract(body(0), body(W));
+  const g = domeGeo(D), W = 1.6, z0 = g.Lt;
+  const slab = (lx, wy, z, rr) => translate([0, 0, z], extrudeLinear({ height: 0.2 }, roundedRectangle({ size:[lx, wy], roundRadius: Math.max(1, rr), segments: 24 })));
+  const body = (d) => union(
+    hull(slab(88 - 2*d, 50 - 2*d, d ? z0 - 3 : z0, 14 - d), slab(88 - 2*d, 50 - 2*d, 28 - d, 14 - d), slab(86 - 2*d, 48 - 2*d, 33 - d, 13 - d), slab(76 - 2*d, 44 - 2*d, 38 - d, 12 - d)),
+    hull(slab(62 - 2*d, 44 - 2*d, 36 - d, 11 - d), slab(54 - 2*d, 38 - 2*d, 47 - d, 10 - d), slab(32 - 2*d, 16 - 2*d, 58 - d, 6 - d)));
+  const outerSolid = body(0), shell = subtract(outerSolid, body(W));
   const foot = extrudeRotate({ segments:96 }, ccwPoly([[D.boreR, 0], [g.tubeOR, 0], [g.tubeOR, g.Lt - (BAYO.cs + BAYO.clr)], [g.gOR, g.gz + 0.1], [D.boreR, g.gz + 0.1]]));
-  const wheel = (x, y) => translate([x, y, 32], rotate([Math.PI/2, 0, 0], rotate([0, 0, Math.PI/8], cylinder({ radius:13.5, height:5, segments:8 }))));
-  const parts = [shell, foot, wheel(32, 27.5), wheel(-32, 27.5), wheel(32, -27.5), wheel(-32, -27.5),
-    translate([8, 0, 80.5], cuboid({ size:[10, 14, 6] })), translate([-8, 0, 80.5], cuboid({ size:[10, 14, 6] })),    // light bar (paint red / blue)
-    translate([49, 15, 40], rotate([0, Math.PI/2, 0], cylinder({ radius:4, height:3, segments:16 }))), translate([49, -15, 40], rotate([0, Math.PI/2, 0], cylinder({ radius:4, height:3, segments:16 })))];
-  return subtract(union(...parts), union(domeLidCuts(D), translate([0, 0, g.gz], cylinder({ radius:D.boreR, height:3, segments:64 }))));
+  const cone = intersect(extrudeRotate({ segments:96 }, ccwPoly([[22.24, g.gz], [g.gOR, g.gz], [52, g.gz + 27.5], [49.74, g.gz + 27.5]])), outerSolid);
+  const wheel = (x, y) => translate([x, y, z0 + 11], rotate([Math.PI/2, 0, 0], rotate([0, 0, Math.PI/8], cylinder({ radius:11.9, height:5, segments:8 }))));
+  const lamp = (y) => translate([43.5, y, 20], sphere({ radius:3.6, segments:14 }));
+  const parts = [shell, cone, foot, wheel(28, 27.5), wheel(-28, 27.5), wheel(28, -27.5), wheel(-28, -27.5), lamp(14), lamp(-14),
+    translate([8, 0, 61], cuboid({ size:[14, 16, 6] })), translate([-8, 0, 61], cuboid({ size:[14, 16, 6] }))];   // light bar over the whole roof (paint red / blue); it is the car's foot on the bed
+  const car = subtract(union(...parts), domeLidCuts(D));
+  return translate([0, 0, 64], rotate([Math.PI, 0, 0], car));
 }
 
 // ---- 4. HERO LAMP (three prints): the HEAD hood on the bayonet (the 16x is the face), a FACE PLATE (diffuser,
@@ -1052,20 +1060,41 @@ function heroBody() {
   const bolt = ccwPoly([[4,10],[-6,-1],[0,-1],[-4,-10],[6,2],[0,2]].map(p => [p[0]*1.3, p[1]*1.3]));
   parts.push(translate([0, -14.5, 66], rotate([Math.PI/2, 0, 0], extrudeLinear({ height: 2 }, bolt))));   // lightning bolt on the chest
   const bw = HERO.boxW + 2*HERO.clr;
-  const cradle = subtract(translate([0, 0, 94], cuboid({ size:[bw + 7.4, 32, 16] })), translate([0, -3, 99], cuboid({ size:[bw, 28 + 0, 14] })));
+  const cradle = subtract(translate([0, 0, 100], cuboid({ size:[bw + 7.4, 32, 28] })), translate([0, -3, 105], cuboid({ size:[bw, 28, 26] })));   // pocket floor z 92, open to the front and the top
   parts.push(hull(slab(62, 30, 84), slab(bw + 7.4, 30, 86)), cradle);
   return union(...parts);
 }
 
+// ASSEMBLED hero (preview only, not for printing): the housing box (54 x 54 x 25, assumed) stands in the cradle with
+// its bayonet face to the front (-y); the head hood twists onto that face; the face plate drops into the hood.
+function heroAssembled(D) {
+  const g = domeGeo(D), frontY = -16, boxC = 92 + HERO.boxW/2;
+  const toBox = (solid) => translate([0, frontY + g.Lt, boxC], rotate([Math.PI/2, 0, 0], solid));   // hood z axis -> -y, face at y = frontY
+  return [toBox(heroHead(D)), toBox(translate([0, 0, 31], heroFace())), heroBody()];
+}
+
+// Drop every piece that is not connected to the biggest one (loose slivers left by boolean cuts): union-find over
+// the polygons' shared vertices; keeps the component with the most polygons.
+function keepLargestPart(g) {
+  const polys = geom3.toPolygons(g), par = polys.map((_, i) => i), find = (i) => { while (par[i] !== i) { par[i] = par[par[i]]; i = par[i]; } return i; };
+  const vk = (v) => Math.round(v[0]*1000) + ',' + Math.round(v[1]*1000) + ',' + Math.round(v[2]*1000), seen = new Map();
+  polys.forEach((p, i) => { const V = p.vertices.map(vk);               // join polygons that share an EDGE (touching at a corner only is not connected)
+    for (let j=0; j<V.length; j++) { const a = V[j], b = V[(j+1) % V.length], k = a < b ? a + '|' + b : b + '|' + a;
+      if (seen.has(k)) par[find(i)] = find(seen.get(k)); else seen.set(k, i); } });
+  const cnt = new Map(); polys.forEach((_, i) => { const r = find(i); cnt.set(r, (cnt.get(r) || 0) + 1); });
+  let best = -1, bc = 0; for (const [r, c] of cnt) if (c > bc) { best = r; bc = c; }
+  return geom3.create(polys.filter((_, i) => find(i) === best));
+}
+
 // ---- 5. RED EGG: egg-shaped shell with an organic Voronoi lattice (cells shrunk by a 2.6 mm web).
-function eggLid(D) {
+function eggLid(D, noCut) {
   const g = domeGeo(D), zc = 52, Rm = 36, hu = 48, hd = 70, outer = [];
   for (let z = g.gz; z <= zc + hu - 0.5; z += 1) {
     const E = Rm*Math.sqrt(Math.max(0, 1 - ((z - zc)/(z < zc ? hd : hu))**2)), r = Math.min(g.gOR + (z - g.gz), E), prev = outer[outer.length-1];
     outer.push([r, z]); if (prev && z > zc && (prev[0] - r) > 1.0) break; }          // above the widest point: stop where the wall reaches 45°
   const t = outer[outer.length-1]; outer.push([6, t[1] + (t[0] - 6)]);                 // then a 45° cone to a small flat top
-  const at = polyAt(outer), cut = voronoiCutters(at, 14, arcTo(outer, 1e9) - 19, 12, 2.6, 8, 11);
-  return subtract(revolveCut(ccwPoly(shellProfile(D, outer, 2.2, true)), cut, 12, 14), domeLidCuts(D));
+  const at = polyAt(outer), cut = noCut ? [] : voronoiCutters(at, 14, arcTo(outer, 1e9) - 19, 12, 2.6, 8, 11);
+  return keepLargestPart(subtract(revolveCut(ccwPoly(shellProfile(D, outer, 2.2, true)), cut, 12, 14), domeLidCuts(D)));
 }
 
 // A shallow engraved-text solid for one label, positioned over its reserved strip on the top cover.
@@ -1625,7 +1654,7 @@ async function generate() {
     const hasSeat = domesInDesign().some(k => DOMES[k].seat);   // the diffuser rests on the seat (ø44 only)
     document.getElementById('dlDiffuser').style.display = hasSeat ? 'block' : 'none';
     document.getElementById('dlDiffuser').disabled = !hasSeat;
-    for (const id of ['dlMushStem','dlMushCap','dlMushDiff','dlFlute','dlFluteDiff','dlFacet','dlFacetDiff','dlRocketBody','dlRocketNose','dlStars','dlCar','dlHeroHead','dlHeroFace','dlHeroBody','dlEgg']) {   // lamp shades exist for the ø44 (16x) bayonet only
+    for (const id of ['dlMushStem','dlMushCap','dlMushDiff','dlFlute','dlFluteDiff','dlFacet','dlFacetDiff','dlRocketBody','dlRocketNose','dlStars','dlCar','dlHeroHead','dlHeroFace','dlHeroBody','dlHeroAsm','dlEgg']) {   // lamp shades exist for the ø44 (16x) bayonet only
       document.getElementById(id).style.display = hasSeat ? 'block' : 'none'; document.getElementById(id).disabled = !hasSeat; }
     setStatus(`box ${boxH.toFixed(1)} mm tall · ${placed.length} modules · STL ready (${(currentSTL.byteLength/1024).toFixed(0)} KB)`);
   } catch(e) { console.error(e); setStatus('generate error: ' + e.message); }
@@ -1770,6 +1799,7 @@ shadeBtn('dlCar', 'Building police car…', 'noknok_shade_police_car_44.stl', po
 shadeBtn('dlHeroHead', 'Building hero head…', 'noknok_shade_hero_head_44.stl', heroHead);
 shadeBtn('dlHeroFace', 'Building hero face plate…', 'noknok_shade_hero_face_44.stl', heroFace);
 shadeBtn('dlHeroBody', 'Building hero body…', 'noknok_shade_hero_body_44.stl', heroBody);
+document.getElementById('dlHeroAsm').addEventListener('click', () => busyThen('Building assembled hero (preview)…', () => downloadBlob(toSTL(...heroAssembled(DOMES.d44)), 'noknok_shade_hero_ASSEMBLED_preview_44.stl')));
 shadeBtn('dlEgg', 'Building red egg… (a minute)', 'noknok_shade_egg_44.stl', eggLid);
 shadeBtn('dlFacet', 'Building facet globe… (a few seconds)', 'noknok_shade_facet_44.stl', facetLid);
 
