@@ -764,16 +764,24 @@ function diamondList(at, s0, s1, a, b, p, w, minR, depth, opt) {
   // opt.pk: POCKET mode: the cutter's floor lies pk below the surface and is tilted by opt.tilt(ring,k) about
   // the meridian/circumference axes, so neighbouring tiles read as differently lit facets. Without opt: through-hole.
   const prism = translate([0, 0, opt ? -opt.pk : -depth/2], rh);
-  const list = []; let ring = 0;
+  const list = []; let ring = 0, prev = [], curN = 0;
   for (let s = s0; s <= s1 + 1e-6; s += q, ring++) {
     const P = at(s); if (P.r < minR) break;
-    const n = Math.max(5, Math.floor(2*Math.PI*P.r / p)), tilt = Math.atan2(P.nr, P.nz);
-    const phi0 = (ring % 2) * Math.PI / n;
+    // same hole count for a run of rings so neighbouring rows interlock exactly; change it only when the
+    // radius moved ~15% (the pitch then stays within ±15%); the skip rule below handles the rows where it changes
+    const nLoc = Math.max(5, Math.floor(2*Math.PI*P.r / p)); if (!curN || nLoc < curN*0.87 || nLoc > curN*1.15) curN = nLoc;
+    const n = curN, tilt = Math.atan2(P.nr, P.nz);
+    const phi0 = (ring % 2) * Math.PI / n, phis = [];
     for (let k=0; k<n; k++) { const phi = phi0 + k*2*Math.PI/n;
+      // rings have different hole counts, so now and then a hole lands almost straight above one in the ring
+      // below and the two rhombi would overlap (overlapping cutters make broken polygons): skip that hole
+      if (prev.some(q2 => { const d = Math.abs(((phi - q2 + Math.PI) % TAU + TAU) % TAU - Math.PI); return d*P.r < 0.38*p; })) continue;
+      phis.push(phi);
       const t = opt ? opt.tilt(ring, k) : [0, 0];
       const cutter = translate([P.r*Math.cos(phi), P.r*Math.sin(phi), P.z],
         rotate([0, 0, phi], rotate([0, tilt, 0], rotate([t[0], t[1], 0], prism))));
       list.push({ phi, r: P.r, polys: geom3.toPolygons(cutter) }); }
+    prev = phis;
   }
   return list;
 }
