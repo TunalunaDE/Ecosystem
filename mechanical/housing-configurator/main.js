@@ -897,7 +897,7 @@ function facetLid(D) {
     { pk: 1.4, tilt: (ring, k) => tilts[(k + ring) % 3] });
   return subtract(revolveCut(ccwPoly(prof), pockets, 12, 12), domeLidCuts(D));
 }
-// TALL DIFFUSER for the flute lamp: the ø44 diffuser (flange on the 45° seat, 3 lug bays) with a straight tube
+// TALL DIFFUSER for the flute lamp (height 100) and the mushroom stem (height 56, ends below the neck): the ø44 diffuser (flange on the 45° seat, 3 lug bays) with a straight tube
 // instead of the globe, ending in a 45° cone so it prints without support. Thin white filament.
 function fluteDiffuser(D, height) {
   const g = domeGeo(D), Ro = D.boreR - DIFF.gap, Ri = Ro - DIFF.wall, FT = DIFF.flangeT, w = DIFF.wall;
@@ -1467,7 +1467,7 @@ async function generate() {
     const hasSeat = domesInDesign().some(k => DOMES[k].seat);   // the diffuser rests on the seat (ø44 only)
     document.getElementById('dlDiffuser').style.display = hasSeat ? 'block' : 'none';
     document.getElementById('dlDiffuser').disabled = !hasSeat;
-    for (const id of ['dlMushStem','dlMushCap','dlFlute','dlFluteDiff','dlFacet']) {   // lamp shades exist for the ø44 (16x) bayonet only
+    for (const id of ['dlMushStem','dlMushCap','dlMushDiff','dlFlute','dlFluteDiff','dlFacet']) {   // lamp shades exist for the ø44 (16x) bayonet only
       document.getElementById(id).style.display = hasSeat ? 'block' : 'none'; document.getElementById(id).disabled = !hasSeat; }
     setStatus(`box ${boxH.toFixed(1)} mm tall · ${placed.length} modules · STL ready (${(currentSTL.byteLength/1024).toFixed(0)} KB)`);
   } catch(e) { console.error(e); setStatus('generate error: ' + e.message); }
@@ -1601,6 +1601,7 @@ const shadeBtn = (id, msg, file, build) => document.getElementById(id).addEventL
   () => busyThen(msg, () => downloadBlob(toSTL(build(DOMES.d44)), file)));
 shadeBtn('dlMushStem', 'Building mushroom stem… (a few seconds)', 'noknok_shade_mushroom_stem_44.stl', mushroomStem);
 shadeBtn('dlMushCap', 'Building mushroom cap… (a few seconds)', 'noknok_shade_mushroom_cap_44.stl', mushroomCap);
+shadeBtn('dlMushDiff', 'Building mushroom diffuser…', 'noknok_shade_mushroom_diffuser_44.stl', (D) => fluteDiffuser(D, 56));   // tube inside the stem, ends below the neck
 shadeBtn('dlFlute', 'Building flute lamp…', 'noknok_shade_flutes_44_lid.stl', fluteLid);
 shadeBtn('dlFluteDiff', 'Building tall diffuser…', 'noknok_shade_flutes_44_diffuser.stl', (D) => fluteDiffuser(D, 100));
 shadeBtn('dlFacet', 'Building facet globe… (a few seconds)', 'noknok_shade_facet_44.stl', facetLid);
