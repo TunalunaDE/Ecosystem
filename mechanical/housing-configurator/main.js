@@ -910,6 +910,21 @@ function fluteDiffuser(D, height) {
   return subtract(body, union(...bays));
 }
 
+// FACET DIFFUSER (optional, thin white): the 16x diffuser flange and lug bays, a short tube through the bore,
+// then a 45° flare out into a smaller globe (sphere band R 34 between ±45°, 45° cone to the tip) that sits
+// inside the facet lid with clearance. Every outside surface is <= 45° from vertical: prints flange down, no support.
+function facetDiffuser(D) {
+  const g = domeGeo(D), Ro = D.boreR - DIFF.gap, Ri = Ro - DIFF.wall, FT = DIFF.flangeT, w = DIFF.wall, R = 34, r45 = R*Math.SQRT1_2;
+  const flangeOR = g.rH - (g.Lt + FT - g.chamferStart), z1 = 13, zc = z1 + (r45 - Ro) + r45;
+  const path = [[Ro, FT], [Ro, z1], [r45, z1 + (r45 - Ro)]];
+  for (let i=1; i<=24; i++) { const l = -Math.PI/4 + (Math.PI/4)*i/12; path.push([R*Math.cos(l), zc + R*Math.sin(l)]); }
+  const apex = zc + r45 + r45, inner = offsetPoly(path, -w);
+  const prof = [[Ri, 0], [flangeOR, 0], [flangeOR, FT], ...path, [0, apex], [0, apex - w*Math.SQRT2], ...inner.slice().reverse()];
+  const body = extrudeRotate({ segments:96 }, ccwPoly(prof));
+  const r0 = g.lugIn - DIFF.bayClr, hw = BAYO.lugW/2 + DIFF.bayA;
+  const bayProf = ccwPoly([[r0, -1], [flangeOR + 1, -1], [flangeOR + 1, FT + 1], [r0, FT + 1]]);
+  return subtract(body, union(...lugAngles().map(A => extrudeRotate({ segments:96, startAngle:(A - hw)*DEG, angle:2*hw*DEG }, bayProf))));
+}
 // A shallow engraved-text solid for one label, positioned over its reserved strip on the top cover.
 // Uses the built-in single-stroke vector font; each stroke is expanded to a groove of width strokeW.
 function labelEngraving(l, H, flipX) {
@@ -1467,7 +1482,7 @@ async function generate() {
     const hasSeat = domesInDesign().some(k => DOMES[k].seat);   // the diffuser rests on the seat (ø44 only)
     document.getElementById('dlDiffuser').style.display = hasSeat ? 'block' : 'none';
     document.getElementById('dlDiffuser').disabled = !hasSeat;
-    for (const id of ['dlMushStem','dlMushCap','dlMushDiff','dlFlute','dlFluteDiff','dlFacet']) {   // lamp shades exist for the ø44 (16x) bayonet only
+    for (const id of ['dlMushStem','dlMushCap','dlMushDiff','dlFlute','dlFluteDiff','dlFacet','dlFacetDiff']) {   // lamp shades exist for the ø44 (16x) bayonet only
       document.getElementById(id).style.display = hasSeat ? 'block' : 'none'; document.getElementById(id).disabled = !hasSeat; }
     setStatus(`box ${boxH.toFixed(1)} mm tall · ${placed.length} modules · STL ready (${(currentSTL.byteLength/1024).toFixed(0)} KB)`);
   } catch(e) { console.error(e); setStatus('generate error: ' + e.message); }
@@ -1604,6 +1619,7 @@ shadeBtn('dlMushCap', 'Building mushroom cap… (a few seconds)', 'noknok_shade_
 shadeBtn('dlMushDiff', 'Building mushroom diffuser…', 'noknok_shade_mushroom_diffuser_44.stl', (D) => fluteDiffuser(D, 56));   // tube inside the stem, ends below the neck
 shadeBtn('dlFlute', 'Building flute lamp…', 'noknok_shade_flutes_44_lid.stl', fluteLid);
 shadeBtn('dlFluteDiff', 'Building tall diffuser…', 'noknok_shade_flutes_44_diffuser.stl', (D) => fluteDiffuser(D, 100));
+shadeBtn('dlFacetDiff', 'Building facet diffuser…', 'noknok_shade_facet_diffuser_44.stl', facetDiffuser);
 shadeBtn('dlFacet', 'Building facet globe… (a few seconds)', 'noknok_shade_facet_44.stl', facetLid);
 
 // ---- save / load the 2D design (JSON) ----
