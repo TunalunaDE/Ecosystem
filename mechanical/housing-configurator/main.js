@@ -742,6 +742,166 @@ function domeDiffuser(D) {
   return subtract(body, union(...bays));
 }
 
+// ---- LAMP SHADES for the ø44 dome mount (16x): alternatives to the plain / honeycomb lid -------------------
+// Exploration (Nov 2026). Every shade uses the SAME bayonet base as the reference lid (tube, cone, 3 lug
+// slots, ramp, dimple: domeLidCuts), so it fits the same top cover. Height ~11-12 cm above the cover.
+// Two styles: MUSHROOM (two prints: stem + cap, two colours) and FLUTES (one print + optional tall diffuser).
+// All parts print without support in the pose of the STL (lid-style: bayonet end down).
+
+// shared bayonet foot: tube + 45° cone up to the globe equator height gz (identical to domeLidBody up to there)
+function shadeFootPts(D) {
+  const g = domeGeo(D);
+  return [[D.boreR, 0], [g.tubeOR, 0], [g.tubeOR, g.Lt - (BAYO.cs + BAYO.clr)], [g.gOR, g.gz]];
+}
+// Diamond (rhombus) cutters laid on a revolved surface. `at(s)` -> {r,z,nr,nz} on the OUTER surface at arc
+// length s; rows are s0, s0+q, ...; n holes per ring from the local circumference; alternate rings staggered.
+// Hole half-size: along the meridian b, round the circumference a. Rhombus lattice: with ring pitch p and row
+// step q the rib width between neighbours is w = (p*b/2 + q*a - 2*a*b)/sqrt(a²+b²)  -> q is solved from w.
+function diamondCutters(...args) { return geom3.create(diamondList(...args).flatMap(c => c.polys)); }
+function diamondList(at, s0, s1, a, b, p, w, minR, depth, opt) {
+  const q = (w * Math.hypot(a, b) - p*b/2 + 2*a*b) / a;
+  const rh = extrudeLinear({ height: depth }, polygon({ points: [[b,0],[0,a],[-b,0],[0,-a]] }));
+  // opt.pk: POCKET mode: the cutter's floor lies pk below the surface and is tilted by opt.tilt(ring,k) about
+  // the meridian/circumference axes, so neighbouring tiles read as differently lit facets. Without opt: through-hole.
+  const prism = translate([0, 0, opt ? -opt.pk : -depth/2], rh);
+  const list = []; let ring = 0;
+  for (let s = s0; s <= s1 + 1e-6; s += q, ring++) {
+    const P = at(s); if (P.r < minR) break;
+    const n = Math.max(5, Math.floor(2*Math.PI*P.r / p)), tilt = Math.atan2(P.nr, P.nz);
+    const phi0 = (ring % 2) * Math.PI / n;
+    for (let k=0; k<n; k++) { const phi = phi0 + k*2*Math.PI/n;
+      const t = opt ? opt.tilt(ring, k) : [0, 0];
+      const cutter = translate([P.r*Math.cos(phi), P.r*Math.sin(phi), P.z],
+        rotate([0, 0, phi], rotate([0, tilt, 0], rotate([t[0], t[1], 0], prism))));
+      list.push({ phi, r: P.r, polys: geom3.toPolygons(cutter) }); }
+  }
+  return list;
+}
+// Subtract many cutters from a revolved profile FAST: split the body into `nSect` angular sectors, give each
+// sector only the cutters that reach into it (a cutter that straddles a boundary goes to both), then union.
+// One big subtract is quadratic in cutters x polygons (the facet globe took 22 min that way, now ~1-2 min).
+function revolveCut(prof, list, nSect, reach) {
+  const parts = [];
+  for (let k=0; k<nSect; k++) {
+    const a0 = k*TAU/nSect, a1 = (k+1)*TAU/nSect;
+    const mine = list.filter(c => { const m = Math.asin(Math.min(1, reach / c.r)); let d = Math.abs(((c.phi - (a0+a1)/2 + Math.PI) % TAU + TAU) % TAU - Math.PI);
+      return d <= (a1 - a0)/2 + m; });
+    const body = extrudeRotate({ segments: Math.ceil(96/nSect), startAngle: a0, angle: a1 - a0 }, prof);
+    parts.push(mine.length ? subtract(body, geom3.create(mine.flatMap(c => c.polys))) : body);
+  }
+  return union(...parts);
+}
+// arc-length sampler over a polyline of (r,z) going up/inward; outward normal = (dz, -dr)/|t|
+function polyAt(pts) {
+  const cum = [0]; for (let i=1; i<pts.length; i++) cum.push(cum[i-1] + Math.hypot(pts[i][0]-pts[i-1][0], pts[i][1]-pts[i-1][1]));
+  return (s) => { let i = 1; while (i < pts.length-1 && cum[i] < s) i++;
+    const t = Math.min(1, Math.max(0, (s - cum[i-1]) / (cum[i] - cum[i-1])));
+    const dr = pts[i][0]-pts[i-1][0], dz = pts[i][1]-pts[i-1][1], L = Math.hypot(dr, dz);
+    return { r: pts[i-1][0] + dr*t, z: pts[i-1][1] + dz*t, nr: dz/L, nz: -dr/L }; };
+}
+// shift a polyline (r,z) by `d` along its outward normal (d < 0 = inward): the wall's inner surface
+function offsetPoly(pts, d) {
+  return pts.map((p, i) => { const a = pts[Math.max(0, i-1)], c = pts[Math.min(pts.length-1, i+1)];
+    const dr = c[0]-a[0], dz = c[1]-a[1], L = Math.hypot(dr, dz); return [p[0] + d*dz/L, p[1] - d*dr/L]; });
+}
+
+const SHADE = { wall:1.6, stemTop:66, neck:22.5, spigot:20, spigotH:8, capR:44, capB:34, capLip:3, capMinSlope:38,
+  sleeveWall:2.2, fitClr:0.15, crush:0.15, spokes:4, spokeW:7, spokeT:2.4,
+  fluteH:111, fluteSeg:13.9, fluteR:24.5, fluteA:1.4, fluteN:28, fluteTwist:22, fluteWall:1.2 };
+
+// MUSHROOM STEM (print bayonet end down). Bulb-shaped lattice shell of tall slits, solid skirt and neck ring,
+// a spigot on top that the cap slips over. Inner 45° chamfers keep the underside support-free.
+const arcTo = (pts, z) => { let s = 0; for (let i=1; i<pts.length && pts[i][1] <= z; i++) s += Math.hypot(pts[i][0]-pts[i-1][0], pts[i][1]-pts[i-1][1]); return s; };
+function mushroomStem(D) {
+  const S = SHADE, g = domeGeo(D), z0 = g.gz, zT = S.stemTop - 10, w = S.wall, top = S.stemTop, iS = S.spigot - w;
+  const rOut = (z) => { const t = (z - z0) / (zT - z0);
+    return g.gOR + (S.neck - g.gOR)*t*t + 3.0*Math.sin(Math.PI * Math.pow(t, 0.75)); };
+  const outer = []; for (let i=0; i<=40; i++) { const z = z0 + (zT - z0)*i/40; outer.push([rOut(z), z]); }
+  const inner = offsetPoly(outer, -w).filter(p => p[1] >= z0 + 4 && p[1] <= zT);
+  const innTop = inner[inner.length-1];
+  const prof = [...shadeFootPts(D), ...outer.slice(1), [S.neck, top], [S.spigot, top], [S.spigot, top + S.spigotH],
+    [iS, top + S.spigotH], [iS, innTop[1] + (innTop[0] - iS)],                      // spigot bore, then a 45° chamfer out to the shell
+    ...inner.slice().reverse(), [D.boreR, z0], [D.boreR, 0]];
+  const body = extrudeRotate({ segments:96 }, ccwPoly(prof));
+  const cut = diamondCutters(polyAt(outer), arcTo(outer, 18), arcTo(outer, zT - 6), 2.6, 6.5, 8.0, 2.0, 5, 8);
+  return subtract(subtract(body, cut), domeLidCuts(D));
+}
+// MUSHROOM CAP (print brim down: spokes + sleeve + lip lie on the bed, dome grows up, no support). Dome =
+// ellipse (a=capR, b=capB) from the vertical lip up to a 38° slope, then a straight 38° cone to the tip, so the
+// top never goes flatter than 38° (52° from vertical on the print). A sleeve (inner = spigot + clearance, 6 crush ribs) hangs on 4 spokes.
+function mushroomCap(D) {
+  const S = SHADE, a = S.capR, b = S.capB, lip = S.capLip, w = S.wall;
+  const pts = [[a, 0], [a, lip]];
+  for (let i=1; i<=80; i++) { const t = (Math.PI/2)*i/80, r = a*Math.cos(t), z = lip + b*Math.sin(t);
+    if (Math.atan2(b*Math.cos(t), a*Math.sin(t)) < S.capMinSlope*DEG) { pts.push([r, z], [0, z + r*Math.tan(S.capMinSlope*DEG)]); break; }
+    pts.push([r, z]); }
+  const apex = pts[pts.length-1][1], inn = offsetPoly(pts.slice(0, -1), -w);
+  const prof = [...pts, [0, apex - w/Math.cos(S.capMinSlope*DEG)], ...inn.slice().reverse()];
+  let dome = extrudeRotate({ segments:96 }, ccwPoly(prof));
+  const Ltot = arcTo(pts, 1e9);
+  dome = subtract(dome, diamondCutters(polyAt(pts), lip + 9, Ltot - 4, 3.25, 5.0, 9.5, 2.2, 9, 6));
+  const rsi = S.spigot + S.fitClr, rso = rsi + S.sleeveWall, rim = a - w + 0.3, sh = S.spigotH - 0.5;
+  const sleeve = extrudeRotate({ segments:96 }, ccwPoly([[rsi, 0], [rso, 0], [rso, sh], [rsi + 0.4, sh], [rsi, sh - 0.4]]));
+  const parts = [dome, sleeve];
+  for (let k=0; k<S.spokes; k++)
+    parts.push(rotate([0, 0, k*TAU/S.spokes], translate([(rso + rim)/2 - 0.2, 0, S.spokeT/2], cuboid({ size:[rim - rso + 0.6, S.spokeW, S.spokeT] }))));
+  for (let k=0; k<6; k++)                                       // crush ribs: tiny interference for a snug friction fit
+    parts.push(rotate([0, 0, k*Math.PI/3], translate([rsi - S.crush + 0.5, 0, sh/2], cuboid({ size:[1.0, 1.0, sh] }))));
+  return union(...parts);
+}
+
+// FLUTE LAMP (one print, bayonet end down): a tall tube with sine flutes whose twist reverses every
+// `fluteSeg` mm, so the folds zigzag up the wall. Thin 1.2 mm wall (translucent / white filament glows).
+// Built from twisted extrusions of one 2D ring, so the print is seamless and support-free.
+function fluteLid(D) {
+  const S = SHADE, g = domeGeo(D), N = S.fluteN, R = S.fluteR, A = S.fluteA, n = 360;
+  const ring = (rad) => polygon({ points: Array.from({ length: n }, (_, i) => { const f = i/n*TAU;
+    const r = rad + A*Math.sin(N*f); return [r*Math.cos(f), r*Math.sin(f)]; }) });
+  const sec = subtract(ring(R), ring(R - S.fluteWall));
+  const segs = Math.round(S.fluteH / S.fluteSeg), parts = [];
+  for (let k=0; k<segs; k++) {
+    const sign = k % 2 ? -1 : 1, tw = S.fluteTwist*DEG*sign;
+    const seg = extrudeLinear({ height: S.fluteSeg, twistAngle: tw, twistSteps: 14 }, sec);
+    // start each segment at the angle where the previous one ended so the folds line up (sum of twists)
+    const a0 = (k % 2) ? S.fluteTwist*DEG : 0;                       // twist after an up segment = +T, after down = 0
+    parts.push(translate([0, 0, g.gz + k*S.fluteSeg], rotate([0, 0, a0], seg)));
+  }
+  // bayonet foot (tube + cone) joined to the first section by a thin ring at the cone top
+  const foot = extrudeRotate({ segments:96 }, ccwPoly([...shadeFootPts(D), [g.gOR - 0.0, g.gz + 0.2], [R - S.fluteWall, g.gz + 0.2],
+    [R - S.fluteWall, g.gz], [D.boreR, g.gz], [D.boreR, 0]]));
+  return subtract(union(foot, ...parts), domeLidCuts(D));
+}
+// FACET GLOBE (third shade, one print): a crystal-ball lamp. Profile = 45° cone out of the bayonet foot, a
+// sphere band (R 50) between ±45° latitude, 45° cone in to a small flat top (ø20). Every part of the outside is
+// <= 45° from vertical, so it prints bayonet-end down without support. The wall is 3 mm; the outside carries
+// rhombic POCKETS whose floors are tilted three ways (+/-10° and 0 in a 3-tile rhythm), so neighbouring tiles
+// catch the light differently (inspired by cube-tiling globes, but a different tile shape and tilt rule).
+function facetLid(D) {
+  const g = domeGeo(D), R = 50, wall = 3.0, r45 = R*Math.SQRT1_2, zc = g.gz + (r45 - g.gOR) + r45;   // sphere centre
+  const outer = [[g.gOR, g.gz], [r45, g.gz + (r45 - g.gOR)]];
+  for (let i=1; i<=24; i++) { const l = -Math.PI/4 + (Math.PI/4)*i/12, r = R*Math.cos(l), z = zc + R*Math.sin(l); outer.push([r, z]); }   // -45° .. +45°
+  const zTop = outer[outer.length-1][1], rTop = 10;
+  outer.push([rTop, zTop + (r45 - rTop)]);
+  const inner = offsetPoly(outer, -wall), top = outer[outer.length-1];
+  const prof = [...shadeFootPts(D).slice(0, 3), ...outer, [0, top[1]], [0, top[1] - wall], ...inner.slice().reverse(), [D.boreR, g.gz]];
+  const tilts = [[0, 10*DEG], [0, -10*DEG], [0, 0]];
+  const pockets = diamondList(polyAt(outer), 10, arcTo(outer, 1e9) - 8, 5.0, 8.7, 11.0, 1.1, 12, 7,
+    { pk: 1.4, tilt: (ring, k) => tilts[(k + ring) % 3] });
+  return subtract(revolveCut(ccwPoly(prof), pockets, 12, 12), domeLidCuts(D));
+}
+// TALL DIFFUSER for the flute lamp: the ø44 diffuser (flange on the 45° seat, 3 lug bays) with a straight tube
+// instead of the globe, ending in a 45° cone so it prints without support. Thin white filament.
+function fluteDiffuser(D, height) {
+  const g = domeGeo(D), Ro = D.boreR - DIFF.gap, Ri = Ro - DIFF.wall, FT = DIFF.flangeT, w = DIFF.wall;
+  const flangeOR = g.rH - (g.Lt + FT - g.chamferStart), zT = height - Ro;
+  const pts = [[Ri, 0], [flangeOR, 0], [flangeOR, FT], [Ro, FT], [Ro, zT], [0, zT + Ro], [0, zT + Ro - w*Math.SQRT2], [Ri, zT + Ro - Ri - w*Math.SQRT2]];
+  const body = extrudeRotate({ segments:96 }, ccwPoly(pts));
+  const r0 = g.lugIn - DIFF.bayClr, hw = BAYO.lugW/2 + DIFF.bayA;
+  const bayProf = ccwPoly([[r0, -1], [flangeOR + 1, -1], [flangeOR + 1, FT + 1], [r0, FT + 1]]);
+  const bays = lugAngles().map(A => extrudeRotate({ segments:96, startAngle:(A - hw)*DEG, angle:2*hw*DEG }, bayProf));
+  return subtract(body, union(...bays));
+}
+
 // A shallow engraved-text solid for one label, positioned over its reserved strip on the top cover.
 // Uses the built-in single-stroke vector font; each stroke is expanded to a groove of width strokeW.
 function labelEngraving(l, H, flipX) {
@@ -1299,6 +1459,8 @@ async function generate() {
     const hasSeat = domesInDesign().some(k => DOMES[k].seat);   // the diffuser rests on the seat (ø44 only)
     document.getElementById('dlDiffuser').style.display = hasSeat ? 'block' : 'none';
     document.getElementById('dlDiffuser').disabled = !hasSeat;
+    for (const id of ['dlMushStem','dlMushCap','dlFlute','dlFluteDiff','dlFacet']) {   // lamp shades exist for the ø44 (16x) bayonet only
+      document.getElementById(id).style.display = hasSeat ? 'block' : 'none'; document.getElementById(id).disabled = !hasSeat; }
     setStatus(`box ${boxH.toFixed(1)} mm tall · ${placed.length} modules · STL ready (${(currentSTL.byteLength/1024).toFixed(0)} KB)`);
   } catch(e) { console.error(e); setStatus('generate error: ' + e.message); }
 }
@@ -1425,6 +1587,15 @@ document.getElementById('dlDomeHoney').addEventListener('click', () => busyThen(
   () => { for (const k of domesInDesign()) downloadBlob(toSTL(referenceDomeHoney(DOMES[k])), `noknok_dome_mount_${DOMES[k].label}_lid_honeycomb.stl`); }));   // hex-perforated (any filament)
 document.getElementById('dlDiffuser').addEventListener('click', () => busyThen('Building diffuser…',
   () => { for (const k of domesInDesign()) { const d = domeDiffuser(DOMES[k]); if (d) downloadBlob(toSTL(d), `noknok_dome_mount_${DOMES[k].label}_diffuser.stl`); } }));   // optional inner diffuser (thin white)
+
+// lamp shades (ø44 / 16x bayonet): mushroom = stem + cap (two colours), flutes = lid + optional tall diffuser, facet globe
+const shadeBtn = (id, msg, file, build) => document.getElementById(id).addEventListener('click',
+  () => busyThen(msg, () => downloadBlob(toSTL(build(DOMES.d44)), file)));
+shadeBtn('dlMushStem', 'Building mushroom stem… (a few seconds)', 'noknok_shade_mushroom_stem_44.stl', mushroomStem);
+shadeBtn('dlMushCap', 'Building mushroom cap… (a few seconds)', 'noknok_shade_mushroom_cap_44.stl', mushroomCap);
+shadeBtn('dlFlute', 'Building flute lamp…', 'noknok_shade_flutes_44_lid.stl', fluteLid);
+shadeBtn('dlFluteDiff', 'Building tall diffuser…', 'noknok_shade_flutes_44_diffuser.stl', (D) => fluteDiffuser(D, 100));
+shadeBtn('dlFacet', 'Building facet globe… (a few seconds)', 'noknok_shade_facet_44.stl', facetLid);
 
 // ---- save / load the 2D design (JSON) ----
 // Serialise everything that defines the layout (Sets -> arrays). UI-only state (selection, active modes,
