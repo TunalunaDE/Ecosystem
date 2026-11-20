@@ -24,7 +24,7 @@ under `manifests/`, and are listed in `catalog.json`, which the app fetches firs
   "name": "Smart Lamp",
   "version": "1.0.0",
   "author": "buildwithnoknok",
-  "brain_type": "pico_w",
+  "requires": ["usb_host"],
   "price": 0.0,
   "setup_pattern": "Setup 3 (USB-C + I2C)",
   "description": "A configurable lamp: a USB LEDs module for light, a button to switch it on/off, one knob for brightness and one for colour, and a buzzer for confirmation sounds.",
@@ -87,7 +87,8 @@ under `manifests/`, and are listed in `catalog.json`, which the app fetches firs
 
 | Field | Required | Notes |
 | --- | --- | --- |
-| `brain_type` | yes | `pico_w` (standard) or `pico`. |
+| `requires` | no | Brain capabilities the product needs beyond I2C (DEV-268): `usb_host` (a USB host port, for USB modules), `i2c_b` (a second I2C bus), `ble`. Leave it out and it is derived: `usb_host` when `modules_required` has a `usb_*` module, else nothing. The brain reports what it has in `hello.capabilities` (code.py 0.49+); the app does not send the WiFi details to a brain that lacks a need, and the brain refuses `provision` with reason `brain_lacks`. A written list that leaves out `usb_host` while a USB module is required is a validator error. |
+| `brain_type` | no | **Deprecated** (DEV-268), ignored. It named a board (`pico_w`) instead of a need, which would have hidden every product from another brain (ESP32-S3, RDM-24). Old manifests may keep it; the validator warns. |
 | `setup_pattern` | yes | Controlled vocabulary describing bus topology, **not** free text. I2C-only products are `"Setup 1 (I2C only)"`; anything using a USB module is a Setup 2/2b/3 variant. See the schema `enum`. |
 | `modules_required` | yes | `[{ type, count }]` — what the customer must own. The app checks these against what enumerates on the brain. Identical modules are fine; enumeration gives each a unique address. An entry may carry `"thirdparty": true` for a Qwiic / Stemma QT board from `thirdparty-boards.json` (see authoring-products.md, "Third-party boards"). |
 

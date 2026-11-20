@@ -6,7 +6,7 @@
   "type": "object",
   "additionalProperties": false,
   "required": [
-    "id", "name", "version", "author", "brain_type", "setup_pattern",
+    "id", "name", "version", "author", "setup_pattern",
     "description", "modules_required", "module_firmware", "files"
   ],
   "properties": {
@@ -31,7 +31,13 @@
     "brain_type": {
       "type": "string",
       "enum": ["pico_w", "pico"],
-      "description": "Which brain the product runs on. 'pico_w' is the standard (Wi-Fi enabled) brain."
+      "description": "DEPRECATED (DEV-268), optional, ignored by the app and the brain. A product runs on any brain that has its `requires` capabilities; old manifests may keep this field."
+    },
+    "requires": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "type": "string", "enum": ["usb_host", "i2c_b", "ble"] },
+      "description": "Brain capabilities the product needs beyond I2C (DEV-268): 'usb_host' = a USB host port for USB modules, 'i2c_b' = a second I2C bus, 'ble' = Bluetooth. Absent = derived: 'usb_host' when modules_required has a usb_* module type, else nothing. The brain reports what it has in `hello.capabilities`; the app and the brain refuse a product whose requirements the brain lacks. validate_product.py rejects a list that omits 'usb_host' while a usb_* module is required."
     },
     "price": {
       "type": "number",
