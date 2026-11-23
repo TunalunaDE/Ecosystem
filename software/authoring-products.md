@@ -356,8 +356,8 @@ What to know:
   `candidates`, and the user names them in the app. A product that knows what is plugged in can name one itself:
   `tp.assign(c, "soldered_pir", "A", 0x30)`.
 - **Pull-ups:** `tp.attach()` logs a warning when a bus is overloaded; `tp.pullup_warnings(c)` returns the same text.
-- **RAM:** the core library is about 7 KB and each driver 0.9-2.3 KB, loaded only when its chip is present (about
-  21.5 KB with all 7 boards, bench 18 Nov 2026). Products without third-party boards pay nothing.
+- **RAM:** each driver is loaded only when its chip is present, and products without third-party boards pay nothing.
+  The measured figures are in the brain-Pico README (link below).
 - Full API per board (properties, options such as the OLED height): brain-Pico README,
   [Third-party Qwiic / Stemma QT boards](https://github.com/buildwithnoknok/brain-Pico#third-party-qwiic--stemma-qt-boards-dev-248).
 
