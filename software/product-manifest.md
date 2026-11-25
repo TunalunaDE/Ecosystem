@@ -88,6 +88,7 @@ under `manifests/`, and are listed in `catalog.json`, which the app fetches firs
 | Field | Required | Notes |
 | --- | --- | --- |
 | `requires` | no | Brain capabilities the product needs beyond I2C (DEV-268): `usb_host` (a USB host port, for USB modules), `i2c_b` (a second I2C bus), `ble`. Leave it out and it is derived: `usb_host` when `modules_required` has a `usb_*` module, else nothing. The brain reports what it has in `hello.capabilities` (code.py 0.49+); the app does not send the WiFi details to a brain that lacks a need, and the brain refuses `provision` with reason `brain_lacks`. A written list that leaves out `usb_host` while a USB module is required is a validator error. |
+| `needs` | no | What the customer's home must provide that is not a module (DEV-281): `["internet"]` = the product reads public data over the home Wi-Fi (bus departures, weather, power price). The app shows "needs your home Wi-Fi" on the product page. Unlike `requires` the brain never refuses a product because of `needs`: it is information, and a product must keep working (show "no data") when the network is away. `validate_product.py` makes `needs: ["internet"]` mandatory when the script imports `noknok_feeds`. |
 | `brain_type` | no | **Deprecated** (DEV-268), ignored. It named a board (`pico_w`) instead of a need, which would have hidden every product from another brain (ESP32-S3, RDM-24). Old manifests may keep it; the validator warns. |
 | `setup_pattern` | yes | Controlled vocabulary describing bus topology, **not** free text. I2C-only products are `"Setup 1 (I2C only)"`; anything using a USB module is a Setup 2/2b/3 variant. See the schema `enum`. |
 | `modules_required` | yes | `[{ type, count }]` — what the customer must own. The app checks these against what enumerates on the brain. Identical modules are fine; enumeration gives each a unique address. An entry may carry `"thirdparty": true` for a Qwiic / Stemma QT board from `thirdparty-boards.json` (see authoring-products.md, "Third-party boards"). |
@@ -208,9 +209,15 @@ the same value; the device is the source of truth, last write wins.
 | `slider` | number in `[min, max]` | `min`, `max` (required), `step`, `unit` |
 | `color` | `"#RRGGBB"` | — |
 | `select` | one of `options[].value` | `options: [{value, label}]` (required) |
-| `text` | string | `max_length` |
+| `text` | string | `max_length`, optional `help` (shown under the field) |
 | `time` | `"HH:MM"` local time | — |
 | `info` | **read-only**: number, string, boolean or `null`, supplied live by `product.py` | `unit`, `decimals`; **no** `default` |
+
+**`text` settings carry free text from the customer** (a bus stop, a town, a line filter). Rules: always set `max_length`
+(the brain stores the value verbatim) and a `default` that works (the Bus Stop Board defaults to `Bern, Bahnhof`); in the
+script treat the value as untrusted: `str(...).strip()`, fall back to the default when empty, never use it as a file name or
+in `eval`. A data product passes it to a `noknok_feeds` provider, which URL-encodes it. The app asks for the text once, the
+brain keeps it in the settings Store (see `authoring-products.md`, "Settings").
 
 **`info` — a live value the customer can see but not change** (noknok.py 1.11+, DEV-46),
 e.g. a module's temperature, a counter, "Brightness limited (warm)". `product.py`
