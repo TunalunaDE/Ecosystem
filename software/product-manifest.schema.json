@@ -123,8 +123,19 @@
     },
     "3d_files": {
       "type": "array",
-      "description": "Optional 3D-printable housing files (STL/3MF/STEP) shipped with the product. Empty if the product has no housing yet.",
-      "items": { "type": "object" }
+      "description": "Optional 3D-printable housing files (STL/3MF) shipped with the product, one entry per printed PART (DEV-280). Empty if the product has no housing yet.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["part", "file"],
+        "properties": {
+          "part": { "type": "string", "minLength": 1, "maxLength": 60, "description": "What the part is, in plain words: 'Shell', 'Base', 'Puck body'." },
+          "file": { "type": "string", "minLength": 1, "description": "Raw https URL of the STL / 3MF file (usually in Ecosystem mechanical/products/), or a path relative to the repo root." },
+          "qty": { "type": "integer", "minimum": 1, "default": 1, "description": "How many to print (4 pucks = qty 4). Missing = 1." },
+          "orientation": { "type": "string", "maxLength": 120, "description": "How to place it on the bed, e.g. 'face down', 'on its back, no supports'." },
+          "notes": { "type": "string", "maxLength": 300, "description": "Print hints: material, layer height, supports, post-processing." }
+        }
+      }
     },
     "assembly_guide": {
       "type": "array",
