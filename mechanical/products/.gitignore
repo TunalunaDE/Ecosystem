@@ -1,0 +1,4 @@
+_assembly_*.stl
+__pycache__/
+# STEP files are published as release assets, not committed (see README)
+*.step
