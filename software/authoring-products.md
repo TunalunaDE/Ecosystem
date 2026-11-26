@@ -361,6 +361,47 @@ What to know:
 - Full API per board (properties, options such as the OLED height): brain-Pico README,
   [Third-party Qwiic / Stemma QT boards](https://github.com/buildwithnoknok/brain-Pico#third-party-qwiic--stemma-qt-boards-dev-248).
 
+## Data feeds (`noknok_feeds`): public data in a product
+
+A product that shows public data (the next buses at a stop, the weather, the electricity price) **never opens a socket
+itself**: `socketpool`, `ssl` and `adafruit_requests` are rejected by the validator. It imports the brain library
+`noknok_feeds` (brain-Pico `software/`, API and rules in the brain-Pico README, section "Data feeds"), which talks to a
+fixed, reviewed list of providers and hands the product plain Python data.
+
+```python
+import noknok_feeds as nf
+feeds = nf.attach(c)
+feeds.add("deps", nf.departures, every=30, station="Bern, Bahnhof", limit=15)
+while True:
+    if feeds.poll():                    # at most ONE due feed per call; it blocks while it fetches
+        draw(feeds.get("deps"))         # last good data, None before the first success
+    c.sleep(0.05)
+```
+
+Providers today: `departures(station, limit)`, `weather(place, hours)`, `power_price(zone)`. The result has `src`, the
+attribution line **the product must show** (the providers' terms require it).
+
+Manifest: write `"needs": ["internet"]` (the app then says "needs your home Wi-Fi"); the validator makes it mandatory
+for a script that imports `noknok_feeds`. Free text such as the stop or town is a `text` setting (see the manifest page).
+
+Rules learned on a real Pico 2 W (bench 20 + 23 Nov 2026, weak Wi-Fi, so these are pessimistic):
+
+- **One server per product, two at most.** Every HTTPS server costs 33-70 KB of heap; a third one hung the brain for 153 s.
+- **The first connect takes 4-13 s** and the app channel (phone) is dead meanwhile; later fetches take 0.2-0.9 s. A reconnect
+  stalls the app about 4 s every minute or two. Poll `every` >= 20 s and never close and reopen connections.
+- **Blocking time is app time.** `feeds.poll()` blocks while it fetches. Do nothing heavy in the same loop turn, and keep
+  your loop calling `c.sleep()` or a module read so the app is served between fetches.
+- **Show "loading..." before the first fetch** (`feeds.get()` is `None`), and keep showing the last good data when a fetch fails
+  (the library keeps it and retries with a backoff; `poll()` never raises).
+- **Time:** `nf.clock_ok()` tells whether the brain's clock is set; the library converts to local time with `nf.local_hm(epoch)`.
+  The clock is set once at boot (no periodic re-sync yet): a brain that has run for weeks drifts by seconds, fine for a bus board.
+- Test the logic on your PC first: `tools/sim/` in the `poc` repo runs a product against a fake brain and recorded provider answers.
+
+The product still works when the network is away: it shows what it has and says so. A data product that needs the network
+for its main function must say it on the product page (`needs`) and in its first screen.
+
+---
+
 ## Worked example: Whack-a-Mole
 
 The cleanest reference for the **symmetric-modules** pattern:
@@ -390,7 +431,7 @@ For a **role-based** product instead, read
    `python tools/validate_product.py <product-id>` from the poc repo root (`--all` for every
    product; `--folder <dir>` for an upload folder with `manifest.json`, `product.py`,
    `image.webp`, `README.md`). It checks the manifest against `product-manifest.schema.json`,
-   the script (parses, size, SPDX header, no network / file writes / settings.toml / secrets)
+   the script (parses, size, SPDX header, no direct network (use `noknok_feeds`) / file writes / settings.toml / secrets)
    and the picture. Python 3 standard library only, works offline after the first run. The
    same check runs on every pull request; WARNINGs are for the human reviewer.
 3. Manifest `files[].url` point at raw `main` URLs; `module_firmware` declares a

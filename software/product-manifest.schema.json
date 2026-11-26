@@ -39,6 +39,12 @@
       "items": { "type": "string", "enum": ["usb_host", "i2c_b", "ble"] },
       "description": "Brain capabilities the product needs beyond I2C (DEV-268): 'usb_host' = a USB host port for USB modules, 'i2c_b' = a second I2C bus, 'ble' = Bluetooth. Absent = derived: 'usb_host' when modules_required has a usb_* module type, else nothing. The brain reports what it has in `hello.capabilities`; the app and the brain refuse a product whose requirements the brain lacks. validate_product.py rejects a list that omits 'usb_host' while a usb_* module is required."
     },
+    "needs": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "type": "string", "enum": ["internet"] },
+      "description": "What the customer's home must provide that is not a module (DEV-281). 'internet' = the product reads public data over the home Wi-Fi (it imports noknok_feeds): the app tells the customer 'needs your home Wi-Fi' and the brain works offline-safe without it. Unlike `requires` this is information for people and the app, the brain never refuses a product because of it. validate_product.py requires 'internet' when the script imports noknok_feeds."
+    },
     "price": {
       "type": "number",
       "minimum": 0,
